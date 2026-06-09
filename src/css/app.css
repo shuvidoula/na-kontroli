@@ -780,43 +780,70 @@ a {
   gap: 8px;
 }
 
-.key-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
-  gap: 8px;
-  align-items: center;
-}
-
-.key-select {
+.key-card {
   min-width: 0;
   border: 1px solid var(--bd-line);
   border-radius: 8px;
   background: var(--bd-white);
-  padding: 10px 12px;
+  overflow: hidden;
+}
+
+.key-card-title {
+  width: 100%;
+  border: 0;
+  background: var(--bd-white);
+  color: var(--bd-ink);
+  padding: 12px;
   text-align: left;
 }
 
-.key-select.active {
-  border-color: var(--bd-olive);
+.own-key-card .key-card-title {
   background: var(--bd-soft);
 }
 
-.own-key-row .key-select {
-  background: var(--bd-soft);
-}
-
-.key-select strong,
-.key-select span {
+.key-card-title strong,
+.key-card-title span {
   display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.key-select span {
+.key-card-title span {
   color: var(--bd-muted);
   font-size: 13px;
   margin-top: 2px;
+}
+
+.key-card-body {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-top: 1px solid var(--bd-line);
+}
+
+.key-card-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.contact-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.key-section-title {
+  color: var(--bd-muted);
+  font-size: 13px;
+  font-weight: 850;
+  padding: 6px 2px 0;
+  text-transform: uppercase;
+}
+
+.key-card .button[disabled] {
+  opacity: .45;
+  pointer-events: none;
 }
 
 .transfer-complete {
@@ -830,7 +857,7 @@ a {
 
 @media (min-width: 520px) {
   .key-actions {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: 1fr;
   }
 }
 
@@ -989,7 +1016,9 @@ a {
   }
 
   .quick-task-box,
-  .key-primary-actions {
+  .key-primary-actions,
+  .key-card-actions,
+  .contact-actions {
     grid-template-columns: 1fr;
   }
 

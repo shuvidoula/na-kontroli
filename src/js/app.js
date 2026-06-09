@@ -103,7 +103,7 @@
 
   function openKeysModal() {
     closeServiceMenu();
-    fillKeyForm(activeAccessKey());
+    state.editingKeyId = (activeAccessKey() || {}).id || "";
     renderKeyLibrary();
     $("#keysPopup").classList.add("active");
   }
@@ -218,36 +218,59 @@
     syncActiveAccessKey();
   }
 
-  function fillKeyForm(key) {
-    state.editingKeyId = key ? key.id : "";
-    $("#accessLabelInput").value = key ? key.label : "";
-    $("#accessNameInput").value = key ? key.name : (state.storageName || "");
-    $("#accessKeyInput").value = key ? key.key : "";
+  function ensureOwnKey() {
+    var own = activeAccessKey();
+    if (own) return own;
+    own = {
+      id: c.id(),
+      kind: "own",
+      label: "Мій ключ",
+      name: state.storageName || "",
+      key: ""
+    };
+    state.accessKeys.unshift(own);
+    state.activeKeyId = own.id;
+    return own;
   }
 
   function renderKeyLibrary() {
+    var own = ensureOwnKey();
     var contacts = state.accessKeys.filter(function (item) { return item.kind !== "own"; });
-    var own = activeAccessKey();
-    var html = "";
-    if (own) {
-      html += '<div class="key-row own-key-row" data-key-id="' + own.id + '">' +
-        '<button class="key-select active" type="button" data-action="selectKey">' +
-          '<strong>Мій ключ: ' + c.escapeHtml(own.label) + '</strong>' +
-          '<span>' + c.escapeHtml(own.name || "-") + ' · ' + own.key.length + ' символів</span>' +
+    var html =
+      '<section class="key-card own-key-card" data-key-id="' + own.id + '">' +
+        '<button class="key-card-title" type="button" data-action="toggleKey">' +
+          '<strong>МІЙ КЛЮЧ</strong><span>' + c.escapeHtml(own.key ? (own.name || "нік не вказано") : "ключ ще не створено") + '</span>' +
         '</button>' +
-        '<button class="button button-outline" type="button" data-action="selectKey">...</button>' +
-      '</div>';
-    }
-    html += contacts.map(function (item) {
-      return '<div class="key-row" data-key-id="' + item.id + '">' +
-        '<button class="key-select" type="button" data-action="selectKey">' +
-          '<strong>Контакт: ' + c.escapeHtml(item.label) + '</strong>' +
-          '<span>' + c.escapeHtml(item.name || "-") + ' · ' + item.key.length + ' символів</span>' +
-        '</button>' +
-        '<button class="button button-outline" type="button" data-action="deleteKey">x</button>' +
-      '</div>';
+        '<div class="key-card-body" ' + (state.editingKeyId === own.id ? "" : "hidden") + '>' +
+          '<label class="field-label">Назва<input data-key-field="label" type="text" maxlength="40" value="' + c.escapeHtml(own.label || "Мій ключ") + '"></label>' +
+          '<label class="field-label">Нік<input data-key-field="name" type="text" maxlength="40" value="' + c.escapeHtml(own.name || "") + '"></label>' +
+          '<label class="field-label">Ключ<textarea data-key-field="key" placeholder="Натисніть згенерувати">' + c.escapeHtml(own.key || "") + '</textarea></label>' +
+          '<div class="key-card-actions">' +
+            '<button class="button button-outline" type="button" data-action="copyKey">Копіювати</button>' +
+            '<button class="button button-outline" type="button" data-action="generateOwnKey"' + (own.key ? " disabled" : "") + '>Згенерувати</button>' +
+            '<button class="button button-fill" type="button" data-action="saveKey">Зберегти</button>' +
+          '</div>' +
+        '</div>' +
+      '</section>' +
+      '<div class="key-section-title">Контакти</div>' +
+      contacts.map(function (item) {
+        return '<section class="key-card" data-key-id="' + item.id + '">' +
+          '<button class="key-card-title" type="button" data-action="toggleKey">' +
+            '<strong>' + c.escapeHtml(item.label || "Контакт") + '</strong><span>' + c.escapeHtml(item.name || "імʼя не вказано") + '</span>' +
+          '</button>' +
+          '<div class="key-card-body" ' + (state.editingKeyId === item.id ? "" : "hidden") + '>' +
+            '<label class="field-label">Назва контакту<input data-key-field="label" type="text" maxlength="40" value="' + c.escapeHtml(item.label || "") + '"></label>' +
+            '<label class="field-label">Імʼя контакту<input data-key-field="name" type="text" maxlength="40" value="' + c.escapeHtml(item.name || "") + '"></label>' +
+            '<label class="field-label">Його ключ<textarea data-key-field="key" placeholder="Вставте ключ контакту">' + c.escapeHtml(item.key || "") + '</textarea></label>' +
+            '<div class="key-card-actions contact-actions">' +
+              '<button class="button button-outline" type="button" data-action="copyKey">Копіювати</button>' +
+              '<button class="button button-fill" type="button" data-action="saveKey">Зберегти</button>' +
+              '<button class="button button-outline danger-link" type="button" data-action="deleteKey">Видалити</button>' +
+            '</div>' +
+          '</div>' +
+        '</section>';
     }).join("");
-    $("#accessKeyList").innerHTML = html || '<div class="stage-empty">Ключів ще немає. Спочатку створіть свій ключ.</div>';
+    $("#accessKeyList").innerHTML = html;
   }
 
   function randomAccessKey() {
@@ -262,68 +285,26 @@
     return btoa(packed).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
   }
 
-  function generateAccessKey() {
-    $("#accessKeyInput").value = randomAccessKey();
-    toast("Складний ключ згенеровано.");
-  }
-
-  function saveKeysFromForm() {
-    var keyValue = c.clean($("#accessKeyInput").value);
-    if (!keyValue) {
-      toast("Вставте або згенеруйте ключ.");
-      return;
-    }
-    var item = state.accessKeys.find(function (key) { return key.id === state.editingKeyId; });
-    if (!item) {
-      item = { id: c.id(), kind: "contact" };
-      state.accessKeys.push(item);
-    }
-    item.label = c.clean($("#accessLabelInput").value) || ("Ключ " + state.accessKeys.length);
-    item.name = c.clean($("#accessNameInput").value) || state.storageName || "";
-    item.key = keyValue;
-    if (!state.accessKeys.some(function (key) { return key.kind === "own"; })) item.kind = "own";
-    persistAccessKeys();
-    fillKeyForm(item);
-    renderKeyLibrary();
-    toast(item.kind === "own" ? "Мій ключ збережено." : "Контакт збережено.");
-  }
-
-  function saveOwnKeyFromForm() {
-    var keyValue = c.clean($("#accessKeyInput").value);
-    if (!keyValue) {
-      toast("Згенеруйте або вставте свій ключ.");
-      return;
-    }
-    var own = activeAccessKey();
-    if (!own || own.kind !== "own") {
-      own = { id: c.id(), kind: "own" };
-      state.accessKeys.unshift(own);
-    }
-    own.kind = "own";
-    own.label = c.clean($("#accessLabelInput").value) || "Мій ключ";
-    own.name = c.clean($("#accessNameInput").value) || state.storageName || "";
-    own.key = keyValue;
-    state.activeKeyId = own.id;
-    persistAccessKeys();
-    fillKeyForm(own);
-    renderKeyLibrary();
-    toast("Мій ключ збережено.");
-  }
-
   function newKeyForm() {
-    fillKeyForm(null);
-    $("#accessLabelInput").value = "Контакт " + (state.accessKeys.filter(function (key) { return key.kind !== "own"; }).length + 1);
-    $("#accessNameInput").value = "";
-    toast("Форма контакту.");
+    var count = state.accessKeys.filter(function (key) { return key.kind !== "own"; }).length + 1;
+    var item = {
+      id: c.id(),
+      kind: "contact",
+      label: "Контакт " + count,
+      name: "",
+      key: ""
+    };
+    state.accessKeys.push(item);
+    state.editingKeyId = item.id;
+    renderKeyLibrary();
+    toast("Контакт додано.");
   }
 
   function selectAccessKey(id) {
     var item = state.accessKeys.find(function (key) { return key.id === id; });
     if (!item) return;
-    state.activeKeyId = item.id;
-    fillKeyForm(item);
+    state.editingKeyId = state.editingKeyId === item.id ? "" : item.id;
     renderKeyLibrary();
-    toast(item.kind === "own" ? "Відкрито мій ключ." : "Відкрито контакт: " + item.label);
   }
 
   function deleteAccessKey(id) {
@@ -336,9 +317,64 @@
     if (!confirm("Видалити ключ \"" + item.label + "\"? Старі пакети з ним не відкриються.")) return;
     state.accessKeys = state.accessKeys.filter(function (key) { return key.id !== id; });
     persistAccessKeys();
-    fillKeyForm(activeAccessKey());
+    state.editingKeyId = (activeAccessKey() || {}).id || "";
     renderKeyLibrary();
     toast("Ключ видалено.");
+  }
+
+  function keyFieldValue(card, field) {
+    var input = card.querySelector('[data-key-field="' + field + '"]');
+    return input ? c.clean(input.value) : "";
+  }
+
+  function saveKeyCard(card) {
+    var id = card.dataset.keyId;
+    var item = state.accessKeys.find(function (key) { return key.id === id; });
+    if (!item) return;
+    var keyValue = keyFieldValue(card, "key");
+    if (!keyValue) {
+      toast(item.kind === "own" ? "Згенеруйте мій ключ." : "Вставте ключ контакту.");
+      return;
+    }
+    item.label = keyFieldValue(card, "label") || (item.kind === "own" ? "Мій ключ" : "Контакт");
+    item.name = keyFieldValue(card, "name") || (item.kind === "own" ? state.storageName : "");
+    item.key = keyValue;
+    if (item.kind === "own") state.activeKeyId = item.id;
+    persistAccessKeys();
+    state.editingKeyId = item.id;
+    renderKeyLibrary();
+    toast(item.kind === "own" ? "Мій ключ збережено." : "Контакт збережено.");
+  }
+
+  function copyKeyCard(card) {
+    var item = state.accessKeys.find(function (key) { return key.id === card.dataset.keyId; });
+    var keyValue = keyFieldValue(card, "key") || (item ? item.key : "");
+    if (!keyValue) {
+      toast("Ключ порожній.");
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(keyValue).then(function () {
+        toast("Ключ скопійовано.");
+      }).catch(function () {
+        toast("Скопіюйте ключ вручну.");
+      });
+      return;
+    }
+    toast("Скопіюйте ключ вручну.");
+  }
+
+  function generateOwnKey(card) {
+    var item = state.accessKeys.find(function (key) { return key.id === card.dataset.keyId; });
+    if (!item || item.kind !== "own") return;
+    var keyInput = card.querySelector('[data-key-field="key"]');
+    if (!keyInput) return;
+    if (c.clean(keyInput.value)) {
+      toast("Щоб згенерувати новий, спочатку очистіть старий ключ.");
+      return;
+    }
+    keyInput.value = randomAccessKey();
+    toast("Мій ключ згенеровано.");
   }
 
   function copyTextFrom(selector, okText) {
@@ -358,27 +394,16 @@
     toast("Скопіюйте виділений текст.");
   }
 
-  function copyOwnKey() {
-    var own = activeAccessKey();
-    if (!own || !own.key) {
-      toast("Спочатку створіть мій ключ.");
-      openKeysModal();
-      return;
-    }
-    fillKeyForm(own);
-    renderKeyLibrary();
-    copyTextFrom("#accessKeyInput", "Мій ключ скопійовано.");
-  }
-
   function requireAccessKey() {
-    if (activeAccessKey()) return true;
+    var own = activeAccessKey();
+    if (own && own.key) return true;
     toast("Спочатку створіть мій ключ.");
     openKeysModal();
     return false;
   }
 
   function requireAnyAccessKey() {
-    if (state.accessKeys.length) return true;
+    if (state.accessKeys.some(function (item) { return item.key; })) return true;
     toast("Спочатку додайте мій ключ або контакт.");
     openKeysModal();
     return false;
@@ -922,9 +947,9 @@
   function unpackExchange(text) {
     var own = activeAccessKey();
     var keys = [];
-    if (own) keys.push(own);
+    if (own && own.key) keys.push(own);
     state.accessKeys.forEach(function (item) {
-      if (!own || item.id !== own.id) keys.push(item);
+      if (item.key && (!own || item.id !== own.id)) keys.push(item);
     });
     var index = 0;
     function next() {
@@ -1662,16 +1687,24 @@
       if (event.target.id === "keysPopup") closeKeysModal();
     });
     $("#newKeyBtn").addEventListener("click", newKeyForm);
-    $("#generateKeyBtn").addEventListener("click", generateAccessKey);
-    $("#copyKeyBtn").addEventListener("click", copyOwnKey);
-    $("#saveOwnKeyBtn").addEventListener("click", saveOwnKeyFromForm);
-    $("#saveKeyBtn").addEventListener("click", saveKeysFromForm);
     $("#accessKeyList").addEventListener("click", function (event) {
       var button = event.target.closest("[data-action]");
-      var row = event.target.closest("[data-key-id]");
-      if (!button || !row) return;
-      if (button.dataset.action === "selectKey") selectAccessKey(row.dataset.keyId);
-      if (button.dataset.action === "deleteKey") deleteAccessKey(row.dataset.keyId);
+      var card = event.target.closest("[data-key-id]");
+      if (!button || !card) return;
+      if (button.dataset.action === "toggleKey") selectAccessKey(card.dataset.keyId);
+      if (button.dataset.action === "copyKey") copyKeyCard(card);
+      if (button.dataset.action === "generateOwnKey") generateOwnKey(card);
+      if (button.dataset.action === "saveKey") saveKeyCard(card);
+      if (button.dataset.action === "deleteKey") deleteAccessKey(card.dataset.keyId);
+    });
+    $("#accessKeyList").addEventListener("input", function (event) {
+      var keyInput = event.target.closest('[data-key-field="key"]');
+      var card = event.target.closest("[data-key-id]");
+      if (!keyInput || !card) return;
+      var item = state.accessKeys.find(function (key) { return key.id === card.dataset.keyId; });
+      if (!item || item.kind !== "own") return;
+      var generate = card.querySelector('[data-action="generateOwnKey"]');
+      if (generate) generate.disabled = !!c.clean(keyInput.value);
     });
     $("#tasksPage").addEventListener("click", handleTaskAction);
     $("#taskPage").addEventListener("click", handleTaskAction);
