@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="НА-КОНТРОЛІ">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#4f5b35">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; connect-src 'none'; navigate-to 'self' blob:; base-uri 'none'; form-action 'none';">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="vendor/framework7/framework7-bundle.min.css">
+  <link rel="stylesheet" href="src/css/app.css">
+  <title>НА-КОНТРОЛІ</title>
+</head>
+<body>
+  <div id="app">
+    <div id="loginScreen" class="screen screen-login">
+      <div class="login-wrap">
+        <div class="brand-row">
+          <div class="app-mark">НК</div>
+          <div>
+            <h1>НА-КОНТРОЛІ</h1>
+            <p id="loginHint">Нове сховище і PIN.</p>
+          </div>
+        </div>
+
+        <div class="login-card">
+          <div id="storageList" class="storage-list"></div>
+
+          <div id="activeStorage" class="storage-box">
+            <span>Сховище</span>
+            <strong id="activeStorageName">-</strong>
+          </div>
+
+          <label id="storageNameLabel" class="field-label">Назва сховища
+            <input id="storageNameInput" type="text" autocomplete="username" maxlength="36" placeholder="Наприклад: Штаб">
+          </label>
+
+          <div id="pinStatus" class="pin-status">PIN вводиться приховано</div>
+          <div id="pinKeys" class="pin-keys"></div>
+
+          <div class="login-actions">
+            <small>Дані відкриваються тільки після PIN на цьому пристрої.</small>
+            <button id="createStorageBtn" class="button button-outline" type="button">Нове сховище</button>
+            <button id="backToStoragesBtn" class="button button-outline" type="button">До списку сховищ</button>
+            <button id="logoutLoginBtn" class="button button-outline" type="button">Вийти / змінити сховище</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="mainScreen" class="screen screen-app" hidden>
+      <header class="app-header">
+        <div class="brand-mini">
+          <div class="app-mark small">НК</div>
+          <div class="brand-copy">
+            <div class="title">НА-КОНТРОЛІ</div>
+            <div id="currentStorageName" class="subtitle"></div>
+          </div>
+        </div>
+        <button id="moreBtn" class="icon-button" type="button" aria-label="Меню">⋮</button>
+        <div id="serviceMenu" class="service-menu" hidden>
+          <button id="doneMenuBtn" type="button">Готово</button>
+          <button id="notifyBtn" type="button">Сповіщення</button>
+          <button id="keysBtn" type="button">Ключі</button>
+          <button id="receivePacketBtn" type="button">Прийняти задачу</button>
+          <button id="exportBtn" type="button">Бекап</button>
+          <button id="importBtn" type="button">Імпорт</button>
+          <button id="logoutBtn" type="button">Вихід</button>
+          <button id="wipeBtn" class="danger-link" type="button">Стерти все</button>
+        </div>
+      </header>
+
+      <main class="app-main">
+        <section id="tasksPage" class="app-page"></section>
+        <section id="taskPage" class="app-page" hidden></section>
+        <section id="donePage" class="app-page" hidden></section>
+        <section id="guidePage" class="app-page" hidden></section>
+      </main>
+
+      <nav class="app-tabbar" aria-label="Основне меню">
+        <button id="navMine" type="button" class="tab-link">Мої</button>
+        <button id="navDelegated" type="button" class="tab-link">Іншим</button>
+        <button id="navNew" type="button" class="tab-link nav-plus">+</button>
+        <button id="navAll" type="button" class="tab-link">Всі</button>
+        <button id="navGuide" type="button" class="tab-link">Довідник</button>
+      </nav>
+    </div>
+
+    <div id="taskPopup" class="task-modal" role="dialog" aria-modal="true" aria-labelledby="taskPopupTitle">
+      <div class="task-sheet">
+        <div class="task-sheet-head">
+          <h2 id="taskPopupTitle">Нова задача</h2>
+          <button id="closeTaskPopup" class="icon-button" type="button" aria-label="Закрити">x</button>
+        </div>
+        <div class="popup-content">
+          <form id="taskForm" class="task-form">
+            <input id="taskId" type="hidden">
+            <label class="field-label">Задача
+              <input id="taskTitle" type="text" required maxlength="140" placeholder="Що зробити">
+            </label>
+            <div class="form-grid">
+              <label class="field-label">Дата
+                <input id="taskDate" type="date" required>
+              </label>
+              <label class="field-label">Час
+                <input id="taskTime" type="time">
+              </label>
+            </div>
+            <label class="field-label">Тег
+              <select id="taskTag">
+                <option value="">Без тегу</option>
+                <option value="personal">Особисте</option>
+                <option value="control">На контролі</option>
+                <option value="urgent">Терміново</option>
+              </select>
+            </label>
+            <details class="delegate-box">
+              <summary>Доручити задачу підлеглому</summary>
+              <label class="field-label">Кому доручена задача
+                <input id="taskAssignee" type="text" maxlength="80" placeholder="Ім'я / підрозділ">
+              </label>
+            </details>
+            <label class="field-label">Примітка
+              <textarea id="taskNote" maxlength="900" placeholder="Коротко"></textarea>
+            </label>
+            <label class="field-label">Етапи
+              <textarea id="taskItems" class="hidden-stage-textarea" placeholder="Кожен етап з нового рядка"></textarea>
+            </label>
+            <div class="stage-editor-wrap">
+              <div id="taskStageEditor" class="stage-editor"></div>
+              <div class="add-stage edit-stage-add">
+                <input id="taskStageDraft" type="text" placeholder="Додати етап">
+                <button id="addFormStage" class="button button-outline" type="button">+</button>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="form-actions task-sheet-actions">
+          <button class="button button-fill" type="submit" form="taskForm">Зберегти</button>
+          <button id="cancelTask" class="button button-outline" type="button">Скасувати</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="keysPopup" class="task-modal" role="dialog" aria-modal="true" aria-labelledby="keysPopupTitle">
+      <div class="task-sheet">
+        <div class="task-sheet-head">
+          <h2 id="keysPopupTitle">Ключі</h2>
+          <button id="closeKeysPopup" class="icon-button" type="button" aria-label="Закрити">x</button>
+        </div>
+        <div class="popup-content">
+          <div class="info-box">
+            <h2>Мій ключ</h2>
+            <p>Цим ключем завжди шифруються задачі, які ви передаєте. Скиньте його людині, яка має приймати ваші задачі.</p>
+          </div>
+          <label class="field-label">Назва ключа
+            <input id="accessLabelInput" type="text" maxlength="40" placeholder="Наприклад: Мій ключ">
+          </label>
+          <label class="field-label">Нік
+            <input id="accessNameInput" type="text" maxlength="40" placeholder="Наприклад: SHUVI">
+          </label>
+          <label class="field-label">Ключ допуску
+            <textarea id="accessKeyInput" placeholder="Згенеруйте власний ключ або вставте новий"></textarea>
+          </label>
+          <button id="saveOwnKeyBtn" class="button button-fill" type="button">Зберегти як мій ключ</button>
+          <div class="info-box">
+            <h2>Книга ключів</h2>
+            <p>Сюди додавайте ключі людей або груп, які скинули вам свій ключ. При прийомі задачі додаток спочатку пробує ваш ключ, потім усі ключі з книги.</p>
+          </div>
+          <div id="accessKeyList" class="key-list"></div>
+          <div class="info-box">
+            <p>Для передачі вибирати ключ не треба: вихідні задачі завжди закриваються вашим ключем. Для прийому задача автоматично відкривається правильним ключем з книги, якщо він там є.</p>
+          </div>
+        </div>
+        <div class="form-actions task-sheet-actions key-actions">
+          <button id="newKeyBtn" class="button button-outline" type="button">Новий контакт</button>
+          <button id="generateKeyBtn" class="button button-outline" type="button">Згенерувати</button>
+          <button id="copyKeyBtn" class="button button-outline" type="button">Копіювати</button>
+          <button id="saveKeyBtn" class="button button-fill" type="button">Зберегти контакт</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="exchangePopup" class="task-modal" role="dialog" aria-modal="true" aria-labelledby="exchangePopupTitle">
+      <div class="task-sheet">
+        <div class="task-sheet-head">
+          <h2 id="exchangePopupTitle">Обмін</h2>
+          <button id="closeExchangePopup" class="icon-button" type="button" aria-label="Закрити">x</button>
+        </div>
+        <div class="popup-content">
+          <label class="field-label">Пакет
+            <textarea id="exchangeText" placeholder="Вставте або скопіюйте пакет НА-КОНТРОЛІ"></textarea>
+          </label>
+          <div id="transferCompleteBox" class="transfer-complete">
+            <label class="field-label">Кому передано
+              <input id="transferRecipientInput" type="text" maxlength="80" placeholder="Ім'я / підрозділ">
+            </label>
+            <button id="finishTransferBtn" class="button button-outline" type="button">Завершити передачу</button>
+          </div>
+          <div class="info-box">
+            <p>Задача відкриється тільки якщо у отримувача є ваш ключ або відповідний ключ у книзі. Додаток сам перевірить збережені ключі.</p>
+          </div>
+        </div>
+        <div class="form-actions task-sheet-actions">
+          <button id="copyExchangeBtn" class="button button-fill" type="button">Копіювати</button>
+          <button id="acceptExchangeBtn" class="button button-outline" type="button">Прийняти</button>
+        </div>
+      </div>
+    </div>
+
+    <input id="importFile" class="hidden-file" type="file" accept="application/json,.json">
+    <div id="appToast" class="app-toast"></div>
+  </div>
+
+  <script src="vendor/framework7/framework7-bundle.min.js"></script>
+  <script src="src/js/crypto.js"></script>
+  <script src="src/js/storage.js"></script>
+  <script src="src/js/app.js"></script>
+</body>
+</html>

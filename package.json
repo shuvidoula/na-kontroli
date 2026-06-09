@@ -1,0 +1,17 @@
+{
+  "name": "na-kontroli",
+  "version": "1.0.0",
+  "description": "НА-КОНТРОЛІ: Framework7 PWA задачник з локальним сховищем для GitHub Pages.",
+  "private": true,
+  "main": "src/js/app.js",
+  "scripts": {
+    "check": "node --check src/js/crypto.js && node --check src/js/storage.js && node --check src/js/app.js && node --check sw.js"
+  },
+  "keywords": [],
+  "author": "ShuviDoula",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "commonjs",
+  "dependencies": {
+    "framework7": "^9.0.5"
+  }
+}
