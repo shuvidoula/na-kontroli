@@ -83,10 +83,10 @@
 
   function openExchangeModal(mode, text) {
     state.exchangeMode = mode || "receive";
-    $("#exchangePopupTitle").textContent = mode === "send" ? "Передати задачу" : "Прийняти задачу";
+    $("#exchangePopupTitle").textContent = mode === "send" ? "Передати задачу" : (mode === "backup" ? "Бекап" : "Прийняти задачу");
     $("#exchangeText").value = text || "";
-    $("#copyExchangeBtn").style.display = mode === "send" ? "block" : "none";
-    $("#acceptExchangeBtn").style.display = mode === "send" ? "none" : "block";
+    $("#copyExchangeBtn").style.display = (mode === "send" || mode === "backup") ? "block" : "none";
+    $("#acceptExchangeBtn").style.display = mode === "receive" ? "block" : "none";
     $("#transferCompleteBox").style.display = mode === "send" ? "grid" : "none";
     if (mode === "send") {
       var task = state.tasks.find(function (item) { return item.id === state.exchangeTaskId; });
@@ -358,6 +358,18 @@
     toast("Скопіюйте виділений текст.");
   }
 
+  function copyOwnKey() {
+    var own = activeAccessKey();
+    if (!own || !own.key) {
+      toast("Спочатку створіть мій ключ.");
+      openKeysModal();
+      return;
+    }
+    fillKeyForm(own);
+    renderKeyLibrary();
+    copyTextFrom("#accessKeyInput", "Мій ключ скопійовано.");
+  }
+
   function requireAccessKey() {
     if (activeAccessKey()) return true;
     toast("Спочатку створіть мій ключ.");
@@ -412,6 +424,11 @@
     if (!task.date || !task.time) return null;
     var date = new Date(task.date + "T" + task.time);
     return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function isOverdue(task) {
+    var due = taskDueDate(task);
+    return !!due && task.status !== "done" && due.getTime() < Date.now();
   }
 
   function reminderId(task, kind) {
@@ -546,6 +563,78 @@
     return text || "";
   }
 
+  function addDays(date, days) {
+    var next = new Date(date.getTime());
+    next.setDate(next.getDate() + days);
+    return next.toISOString().slice(0, 10);
+  }
+
+  function parseQuickTask() {
+    var input = $("#quickTaskInput");
+    var raw = c.clean(input.value);
+    if (!raw) return;
+    var parts = raw.split(/\s+/);
+    var title = [];
+    var assignee = "";
+    var tag = "";
+    var date = "";
+    var time = "";
+    parts.forEach(function (part) {
+      var lower = part.toLowerCase();
+      if (/^@\S+/.test(part)) {
+        assignee = part.slice(1);
+        return;
+      }
+      if (/^#(о|o|особисте|особисто)$/i.test(part)) {
+        tag = "personal";
+        return;
+      }
+      if (/^#(к|k|контроль|на-контролі|контролі)$/i.test(part)) {
+        tag = "control";
+        return;
+      }
+      if (/^#(т|t|терміново|термінове|срочно)$/i.test(part)) {
+        tag = "urgent";
+        return;
+      }
+      if (lower === "сьогодні" || lower === "сегодня") {
+        date = c.today();
+        return;
+      }
+      if (lower === "завтра") {
+        date = addDays(new Date(), 1);
+        return;
+      }
+      if (/^\d{1,2}:\d{2}$/.test(part)) {
+        var bits = part.split(":");
+        time = String(bits[0]).padStart(2, "0") + ":" + bits[1];
+        return;
+      }
+      if (/^\d{3,4}$/.test(part)) {
+        var compact = part.padStart(4, "0");
+        time = compact.slice(0, 2) + ":" + compact.slice(2);
+        return;
+      }
+      if (/^\d{1,2}\.\d{1,2}(\.\d{2,4})?$/.test(part)) {
+        var d = part.split(".");
+        var year = d[2] ? (d[2].length === 2 ? "20" + d[2] : d[2]) : String(new Date().getFullYear());
+        date = year + "-" + d[1].padStart(2, "0") + "-" + d[0].padStart(2, "0");
+        return;
+      }
+      title.push(part);
+    });
+    if (title.length) $("#taskTitle").value = title.join(" ");
+    if (date) $("#taskDate").value = date;
+    if (time) $("#taskTime").value = time;
+    if (tag) $("#taskTag").value = tag;
+    if (assignee) {
+      $("#taskAssignee").value = assignee;
+      $(".delegate-box").open = true;
+    }
+    input.value = "";
+    toast("Швидкий ввід розібрано.");
+  }
+
   function lines(text) {
     return String(text || "").split(/\n+/).map(c.clean).filter(Boolean).map(function (value) {
       return { id: c.id(), text: value, done: false };
@@ -626,7 +715,12 @@
   function deleteStorage(userId) {
     var user = state.users.find(function (item) { return item.id === userId; });
     if (!user) return;
-    f7.dialog.confirm('Видалити сховище "' + user.callsign + '"? Це видалить задачі тільки цього сховища.', "НА-КОНТРОЛІ", function () {
+    var typed = prompt('Щоб видалити сховище "' + user.callsign + '", напишіть: ТАК ВИДАЛИТИ');
+    if (typed !== "ТАК ВИДАЛИТИ") {
+      toast("Видалення скасовано.");
+      return;
+    }
+    f7.dialog.confirm('Остаточно видалити сховище "' + user.callsign + '"? Це видалить задачі тільки цього сховища.', "НА-КОНТРОЛІ", function () {
       state.users = store.deleteUser(state.users, user.id);
       localStorage.removeItem(accessStoreKeyFor(user.id));
       localStorage.removeItem(oldAccessStoreKeyFor(user.id));
@@ -887,6 +981,8 @@
     var recipient = c.clean($("#transferRecipientInput").value) || task.assignee || "виконавцю";
     task.assignee = recipient;
     task.status = "run";
+    task.transferredTo = recipient;
+    task.transferredAt = new Date().toISOString();
     task.items = task.items || [];
     task.items.push({
       id: c.id(),
@@ -980,14 +1076,17 @@
 
   function taskCard(task) {
     var meta = tagMeta(task.tag);
-    return '<article class="task-card ' + task.status + '" data-task="' + task.id + '">' +
+    var overdue = isOverdue(task);
+    return '<article class="task-card ' + task.status + (overdue ? " overdue" : "") + '" data-task="' + task.id + '">' +
       '<div class="task-main ' + (meta ? "has-tag" : "") + '">' +
         (meta ? '<span class="task-tag ' + meta.cls + '" title="' + c.escapeHtml(meta.label) + '">' + meta.letter + '</span>' : '') +
         '<div><div class="task-title">' + c.escapeHtml(task.title) + '</div>' +
         '<div class="meta"><span class="pill">' + c.escapeHtml(label(task.status)) + '</span><span class="pill">' +
         c.escapeHtml(task.date || "") + (task.time ? " " + c.escapeHtml(task.time) : "") + '</span>' +
+        (overdue ? '<span class="pill danger-pill">Прострочено</span>' : '') +
         (meta ? '<span class="pill">' + c.escapeHtml(meta.label) + '</span>' : '') +
         (task.assignee ? '<span class="pill">' + c.escapeHtml(task.assignee) + '</span>' : '') +
+        (task.transferredTo ? '<span class="pill">Передано: ' + c.escapeHtml(task.transferredTo) + '</span>' : '') +
         (task.from ? '<span class="pill">Від: ' + c.escapeHtml(task.from) + '</span>' : '') + '</div></div>' +
         '<button class="button button-outline open-task" type="button" data-action="view">></button>' +
       '</div>' +
@@ -1062,14 +1161,17 @@
       return;
     }
     var meta = tagMeta(task.tag);
+    var overdue = isOverdue(task);
     $("#taskPage").innerHTML =
       '<div class="detail-top"><button class="button button-outline" type="button" data-action="backTasks">Назад</button><button class="button button-fill" type="button" data-action="editTask">Правка</button></div>' +
       '<article class="detail-card">' +
         '<div class="detail-title">' + c.escapeHtml(task.title) + '</div>' +
         '<div class="meta"><span class="pill">' + c.escapeHtml(label(task.status)) + '</span><span class="pill">' + c.escapeHtml(task.date || "") +
         (task.time ? " " + c.escapeHtml(task.time) : "") + '</span>' +
+        (overdue ? '<span class="pill danger-pill">Прострочено</span>' : '') +
         (meta ? '<span class="pill">' + c.escapeHtml(meta.label) + '</span>' : '') +
         (task.assignee ? '<span class="pill">Доручено: ' + c.escapeHtml(task.assignee) + '</span>' : '') +
+        (task.transferredTo ? '<span class="pill">Передано: ' + c.escapeHtml(task.transferredTo) + (task.transferredAt ? " · " + new Date(task.transferredAt).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "") + '</span>' : '') +
         (task.from ? '<span class="pill">Від: ' + c.escapeHtml(task.from) + '</span>' : '') + '</div>' +
         (task.note ? '<p>' + c.escapeHtml(task.note) + '</p>' : '<small>Без примітки.</small>') +
         '<div class="detail-actions">' +
@@ -1086,10 +1188,13 @@
   function renderGuidePage() {
     $("#guidePage").innerHTML =
       '<div class="info-box"><h2>Встановлення</h2><ol>' +
-        '<li>Відкрийте GitHub Pages URL у Safari на iPhone або Chrome на Android.</li>' +
-        '<li>iPhone: Поділитися -> На екран Домівки.</li>' +
-        '<li>Android: Chrome -> меню -> Встановити додаток або Додати на головний екран.</li>' +
-        '<li>Після першого відкриття програма кешується і працює офлайн.</li>' +
+        '<li>НА-КОНТРОЛІ - це PWA. Простими словами: сайт, який можна поставити на екран телефону як звичайний додаток.</li>' +
+        '<li>Відкрийте посилання GitHub Pages саме у Safari на iPhone або Chrome на Android. Через переглядач файлів чи вбудований браузер месенджера встановлення може не зʼявитись.</li>' +
+        '<li>iPhone: натисніть кнопку "Поділитися" у Safari, прокрутіть список дій і виберіть "На екран Домівки". Потім натисніть "Додати".</li>' +
+        '<li>Android: відкрийте меню Chrome з трьома крапками і виберіть "Встановити додаток" або "Додати на головний екран".</li>' +
+        '<li>Після встановлення запускайте додаток з іконки "НК" на екрані. Так він виглядає як окрема програма без адресного рядка.</li>' +
+        '<li>Після першого відкриття файли кешуються. Далі додаток може відкриватися офлайн, а задачі зберігаються локально на цьому пристрої.</li>' +
+        '<li>Коли виходить оновлення, відкрийте додаток з інтернетом. Якщо стара версія тримається, закрийте додаток повністю і відкрийте знову.</li>' +
       '</ol></div>' +
       '<div class="info-box"><h2>Як працювати</h2><ol>' +
         '<li>Плюс у нижньому меню швидко створює задачу.</li>' +
@@ -1102,7 +1207,9 @@
         '<li>Список сортується за датою і часом, якщо час вказаний.</li>' +
         '<li>Етапи допомагають розкласти задачу на прості кроки. У правці їх можна перетягувати за ручку ≡.</li>' +
         '<li>Кнопка "Зроблено" переносить задачу у готові. У виконаній задачі вона змінюється на "Повернутись до виконання".</li>' +
-        '<li>Сховище видаляється тільки на екрані вибору сховищ, кнопкою поруч із конкретною назвою. Глобального видалення всіх сховищ немає.</li>' +
+        '<li>Швидкий ввід розуміє час, дату, тег і виконавця. Приклад: "14:30 перевірити звʼязок #Т @BRAVO".</li>' +
+        '<li>Якщо час задачі минув, а задача не виконана, вона підсвічується як прострочена.</li>' +
+        '<li>Сховище видаляється тільки на екрані вибору сховищ, кнопкою поруч із конкретною назвою. Для видалення треба написати "ТАК ВИДАЛИТИ".</li>' +
       '</ol></div>' +
       '<div class="info-box"><h2>Обмін задачами</h2><ol>' +
         '<li>У меню зверху відкрийте "Ключі". Там є дві частини: "Мій ключ" і "Книга ключів".</li>' +
@@ -1142,6 +1249,7 @@
         '<li>Локальні нагадування допомагають не пропустити задачу з указаним часом.</li>' +
         '<li>Бекап та імпорт дозволяють перенести або зберегти робочий список.</li>' +
         '<li>На телефоні бекап може відкривати системне меню поширення. Якщо файл не зʼявився у завантаженнях, копія JSON також кладеться в буфер обміну.</li>' +
+        '<li>Імпорт має два режими: "Додати" залишає старі задачі і додає нові, "Замінити" видаляє старі задачі та ставить задачі з файлу.</li>' +
         '<li>Framework7 PWA: локальний стек, офлайн-кеш, toast/dialog і підготовка під майбутні компоненти.</li>' +
         '<li>Оновлення приходять через GitHub Pages і service worker.</li>' +
       '</ul></div>' +
@@ -1295,8 +1403,13 @@
     var json = JSON.stringify(payload, null, 2);
     var filename = "na-kontroli-backup-" + c.today() + ".json";
     var blob = new Blob([json], { type: "application/json" });
-    var file = new File([blob], filename, { type: "application/json" });
-    if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+    var file = null;
+    try {
+      file = new File([blob], filename, { type: "application/json" });
+    } catch (e) {
+      file = null;
+    }
+    if (file && navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
       navigator.share({
         title: "Бекап НА-КОНТРОЛІ",
         text: "Резервна копія сховища " + state.storageName,
@@ -1320,6 +1433,7 @@
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(json).catch(function () {});
     }
+    openExchangeModal("backup", json);
     toast("Бекап створено. Якщо файл не зʼявився, копія також у буфері.");
   }
 
@@ -1329,12 +1443,37 @@
       try {
         var data = JSON.parse(reader.result);
         if (!Array.isArray(data.tasks)) throw new Error("bad");
-        f7.dialog.confirm("Замінити поточні задачі імпортом?", "Імпорт", function () {
-          state.tasks = data.tasks;
-          saveTasks();
-          showPage("tasks");
-          toast("Імпортовано.");
-        });
+        f7.dialog.create({
+          title: "Імпорт",
+          text: "У файлі задач: " + data.tasks.length + ". Додати - старі задачі залишаться, нові додадуться. Замінити - старі задачі буде видалено, а з файлу стануть поточними.",
+          buttons: [
+            { text: "Скасувати" },
+            {
+              text: "Додати",
+              onClick: function () {
+                state.tasks = state.tasks.concat(data.tasks.map(function (task) {
+                  task.id = c.id();
+                  task.syncId = task.syncId || c.id();
+                  return task;
+                }));
+                saveTasks();
+                showPage("tasks");
+                toast("Імпорт додано.");
+              }
+            },
+            {
+              text: "Замінити",
+              bold: true,
+              color: "red",
+              onClick: function () {
+                state.tasks = data.tasks;
+                saveTasks();
+                showPage("tasks");
+                toast("Імпорт замінив задачі.");
+              }
+            }
+          ]
+        }).open();
       } catch (e) {
         toast("Не той файл бекапу.");
       }
@@ -1438,6 +1577,13 @@
     });
 
     $("#taskForm").addEventListener("submit", saveTaskForm);
+    $("#applyQuickTask").addEventListener("click", parseQuickTask);
+    $("#quickTaskInput").addEventListener("keydown", function (event) {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        parseQuickTask();
+      }
+    });
     $("#taskStageEditor").addEventListener("input", function (event) {
       var input = event.target.closest("[data-stage-input]");
       if (!input) return;
@@ -1517,9 +1663,7 @@
     });
     $("#newKeyBtn").addEventListener("click", newKeyForm);
     $("#generateKeyBtn").addEventListener("click", generateAccessKey);
-    $("#copyKeyBtn").addEventListener("click", function () {
-      copyTextFrom("#accessKeyInput", "Ключ скопійовано.");
-    });
+    $("#copyKeyBtn").addEventListener("click", copyOwnKey);
     $("#saveOwnKeyBtn").addEventListener("click", saveOwnKeyFromForm);
     $("#saveKeyBtn").addEventListener("click", saveKeysFromForm);
     $("#accessKeyList").addEventListener("click", function (event) {

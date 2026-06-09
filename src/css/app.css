@@ -456,6 +456,15 @@ a {
   background: var(--bd-ok);
 }
 
+.task-card.overdue {
+  border-color: #c34235;
+  background: #fff4f2;
+}
+
+.task-card.overdue::before {
+  background: #c34235;
+}
+
 .task-main {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 44px;
@@ -520,6 +529,12 @@ a {
   border-radius: 999px;
   background: var(--bd-bg);
   padding: 3px 7px;
+}
+
+.danger-pill {
+  border-color: #c34235;
+  background: #c34235;
+  color: #fff;
 }
 
 .empty-state {
@@ -723,6 +738,19 @@ a {
   margin: 0 auto;
   display: grid;
   gap: 12px;
+}
+
+.quick-task-box,
+.key-primary-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.quick-task-box .button,
+.key-primary-actions .button {
+  min-height: 46px;
 }
 
 .form-grid,
@@ -958,6 +986,11 @@ a {
 
   .top-stats {
     gap: 4px;
+  }
+
+  .quick-task-box,
+  .key-primary-actions {
+    grid-template-columns: 1fr;
   }
 
   .stat {

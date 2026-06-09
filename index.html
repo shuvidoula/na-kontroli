@@ -98,6 +98,12 @@
         <div class="popup-content">
           <form id="taskForm" class="task-form">
             <input id="taskId" type="hidden">
+            <div class="quick-task-box">
+              <label class="field-label">Швидкий ввід
+                <input id="quickTaskInput" type="text" maxlength="220" placeholder="14:30 перевірити звʼязок #Т @BRAVO">
+              </label>
+              <button id="applyQuickTask" class="button button-outline" type="button">Розібрати</button>
+            </div>
             <label class="field-label">Задача
               <input id="taskTitle" type="text" required maxlength="140" placeholder="Що зробити">
             </label>
@@ -165,7 +171,10 @@
           <label class="field-label">Ключ допуску
             <textarea id="accessKeyInput" placeholder="Згенеруйте власний ключ або вставте новий"></textarea>
           </label>
-          <button id="saveOwnKeyBtn" class="button button-fill" type="button">Зберегти як мій ключ</button>
+          <div class="key-primary-actions">
+            <button id="copyKeyBtn" class="button button-outline" type="button">Скинути мій ключ</button>
+            <button id="saveOwnKeyBtn" class="button button-fill" type="button">Зберегти мій ключ</button>
+          </div>
           <div class="info-box">
             <h2>Книга ключів</h2>
             <p>Сюди додавайте ключі людей або груп, які скинули вам свій ключ. При прийомі задачі додаток спочатку пробує ваш ключ, потім усі ключі з книги.</p>
@@ -176,9 +185,8 @@
           </div>
         </div>
         <div class="form-actions task-sheet-actions key-actions">
-          <button id="newKeyBtn" class="button button-outline" type="button">Новий контакт</button>
+          <button id="newKeyBtn" class="button button-outline" type="button">Додати чужий ключ</button>
           <button id="generateKeyBtn" class="button button-outline" type="button">Згенерувати</button>
-          <button id="copyKeyBtn" class="button button-outline" type="button">Копіювати</button>
           <button id="saveKeyBtn" class="button button-fill" type="button">Зберегти контакт</button>
         </div>
       </div>
