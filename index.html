@@ -44,6 +44,9 @@
 
           <div class="login-actions">
             <small>Дані відкриваються тільки після PIN на цьому пристрої.</small>
+            <button id="continueStorageBtn" class="button button-fill" type="button">Далі</button>
+            <button id="resetCreatePinBtn" class="button button-outline" type="button">Створити PIN заново</button>
+            <button id="cancelCreateStorageBtn" class="button button-outline danger-link" type="button">Видалити це сховище</button>
             <button id="createStorageBtn" class="button button-outline" type="button">Нове сховище</button>
             <button id="backToStoragesBtn" class="button button-outline" type="button">До списку сховищ</button>
             <button id="logoutLoginBtn" class="button button-outline" type="button">Вийти / змінити сховище</button>
@@ -141,6 +144,19 @@
         <div class="form-actions task-sheet-actions">
           <button class="button button-fill" type="submit" form="taskForm">Зберегти</button>
           <button id="cancelTask" class="button button-outline" type="button">Скасувати</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="createChoicePopup" class="choice-modal" role="dialog" aria-modal="true" aria-labelledby="createChoiceTitle">
+      <div class="choice-sheet">
+        <div class="choice-head">
+          <h2 id="createChoiceTitle">Нова подія</h2>
+          <button id="closeCreateChoice" class="icon-button" type="button" aria-label="Закрити">x</button>
+        </div>
+        <div class="choice-actions">
+          <button id="quickCreateBtn" class="button button-fill" type="button">ШВИДКА</button>
+          <button id="fullCreateBtn" class="button button-outline" type="button">ПОВНА</button>
         </div>
       </div>
     </div>

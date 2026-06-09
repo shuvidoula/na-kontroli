@@ -22,7 +22,10 @@
     userId: "",
     key: "",
     storageName: "",
-    loginMode: "create",
+    loginMode: "createName",
+    pendingStorageName: "",
+    pendingPin: "",
+    pinMismatch: false,
     tasks: [],
     page: "tasks",
     filter: "all",
@@ -90,6 +93,14 @@
     $("#quickTaskPopup").classList.remove("active");
   }
 
+  function openCreateChoiceModal() {
+    $("#createChoicePopup").classList.add("active");
+  }
+
+  function closeCreateChoiceModal() {
+    $("#createChoicePopup").classList.remove("active");
+  }
+
   function openExchangeModal(mode, text) {
     state.exchangeMode = mode || "receive";
     $("#exchangePopupTitle").textContent = mode === "send" ? "Передати задачу" : (mode === "backup" ? "Бекап" : "Прийняти задачу");
@@ -112,7 +123,7 @@
 
   function openKeysModal() {
     closeServiceMenu();
-    state.editingKeyId = (activeAccessKey() || {}).id || "";
+    state.editingKeyId = "";
     renderKeyLibrary();
     $("#keysPopup").classList.add("active");
   }
@@ -245,12 +256,14 @@
   function renderKeyLibrary() {
     var own = ensureOwnKey();
     var contacts = state.accessKeys.filter(function (item) { return item.kind !== "own"; });
+    var ownOpen = state.editingKeyId === own.id;
     var html =
       '<section class="key-card own-key-card" data-key-id="' + own.id + '">' +
-        '<button class="key-card-title" type="button" data-action="toggleKey">' +
-          '<strong>МІЙ КЛЮЧ</strong><span>' + c.escapeHtml(own.key ? (own.name || "нік не вказано") : "ключ ще не створено") + '</span>' +
+        '<button class="key-card-title" type="button" data-action="toggleKey" aria-expanded="' + (ownOpen ? "true" : "false") + '">' +
+          '<span class="key-card-copy"><strong>МІЙ КЛЮЧ</strong><span>' + c.escapeHtml(own.key ? (own.name || "нік не вказано") : "ключ ще не створено") + '</span></span>' +
+          '<span class="key-card-state" aria-hidden="true">' + (ownOpen ? "−" : "+") + '</span>' +
         '</button>' +
-        '<div class="key-card-body" ' + (state.editingKeyId === own.id ? "" : "hidden") + '>' +
+        '<div class="key-card-body" ' + (ownOpen ? "" : "hidden") + '>' +
           '<label class="field-label">Назва<input data-key-field="label" type="text" maxlength="40" value="' + c.escapeHtml(own.label || "Мій ключ") + '"></label>' +
           '<label class="field-label">Нік<input data-key-field="name" type="text" maxlength="40" value="' + c.escapeHtml(own.name || "") + '"></label>' +
           '<label class="field-label">Ключ<textarea data-key-field="key" placeholder="Натисніть згенерувати">' + c.escapeHtml(own.key || "") + '</textarea></label>' +
@@ -263,11 +276,13 @@
       '</section>' +
       '<div class="key-section-title">Контакти</div>' +
       contacts.map(function (item) {
+        var open = state.editingKeyId === item.id;
         return '<section class="key-card" data-key-id="' + item.id + '">' +
-          '<button class="key-card-title" type="button" data-action="toggleKey">' +
-            '<strong>' + c.escapeHtml(item.label || "Контакт") + '</strong><span>' + c.escapeHtml(item.name || "імʼя не вказано") + '</span>' +
+          '<button class="key-card-title" type="button" data-action="toggleKey" aria-expanded="' + (open ? "true" : "false") + '">' +
+            '<span class="key-card-copy"><strong>' + c.escapeHtml(item.label || "Контакт") + '</strong><span>' + c.escapeHtml(item.name || "імʼя не вказано") + '</span></span>' +
+            '<span class="key-card-state" aria-hidden="true">' + (open ? "−" : "+") + '</span>' +
           '</button>' +
-          '<div class="key-card-body" ' + (state.editingKeyId === item.id ? "" : "hidden") + '>' +
+          '<div class="key-card-body" ' + (open ? "" : "hidden") + '>' +
             '<label class="field-label">Назва контакту<input data-key-field="label" type="text" maxlength="40" value="' + c.escapeHtml(item.label || "") + '"></label>' +
             '<label class="field-label">Імʼя контакту<input data-key-field="name" type="text" maxlength="40" value="' + c.escapeHtml(item.name || "") + '"></label>' +
             '<label class="field-label">Його ключ<textarea data-key-field="key" placeholder="Вставте ключ контакту">' + c.escapeHtml(item.key || "") + '</textarea></label>' +
@@ -326,7 +341,7 @@
     if (!confirm("Видалити ключ \"" + item.label + "\"? Старі пакети з ним не відкриються.")) return;
     state.accessKeys = state.accessKeys.filter(function (key) { return key.id !== id; });
     persistAccessKeys();
-    state.editingKeyId = (activeAccessKey() || {}).id || "";
+    state.editingKeyId = "";
     renderKeyLibrary();
     toast("Ключ видалено.");
   }
@@ -651,6 +666,9 @@
 
   function prepareLogin(preferSelect) {
     state.pin = "";
+    state.pendingPin = "";
+    state.pendingStorageName = "";
+    state.pinMismatch = false;
     state.tasks = [];
     state.key = "";
     state.storageName = "";
@@ -664,7 +682,7 @@
     clearInterval(state.reminderTimer);
     if (!state.users.length) {
       state.userId = "";
-      state.loginMode = "create";
+      state.loginMode = "createName";
     } else if (state.users.length === 1 && !preferSelect) {
       state.userId = state.users[0].id;
       state.loginMode = "pin";
@@ -693,23 +711,43 @@
     startReminderLoop();
   }
 
+  function pinDots() {
+    var html = "";
+    for (var i = 0; i < 4; i += 1) html += '<span class="' + (i < state.pin.length ? "filled" : "") + '"></span>';
+    return '<div class="pin-dots" aria-label="Введено цифр: ' + state.pin.length + ' з 4">' + html + '</div>';
+  }
+
   function renderLogin() {
     var user = selectedUser();
     var selecting = state.loginMode === "select" && state.users.length > 0;
-    var creating = state.loginMode === "create";
+    var creatingName = state.loginMode === "createName";
+    var creatingPin = state.loginMode === "createPin";
+    var confirmingPin = state.loginMode === "createConfirm";
+    var creating = creatingName || creatingPin || confirmingPin;
     var pinning = state.loginMode === "pin" && !!user;
+    var needsPin = !state.pinMismatch && (creatingPin || confirmingPin || pinning);
+    var showPinStatus = state.pinMismatch || needsPin;
 
-    $("#loginHint").textContent = selecting ? "Оберіть сховище." : (creating ? "Нове сховище і PIN." : "PIN для входу.");
+    $("#loginHint").textContent = selecting ? "Оберіть сховище." :
+      (creatingName ? "Назва нового сховища." :
+      (creatingPin ? "Створіть PIN." :
+      (confirmingPin ? "Повторіть PIN." : "PIN для входу.")));
     $("#storageList").style.display = selecting ? "grid" : "none";
-    $("#activeStorage").style.display = pinning ? "grid" : "none";
-    $("#activeStorageName").textContent = user ? user.callsign : "-";
-    $("#storageNameLabel").style.display = creating ? "grid" : "none";
-    $("#pinStatus").style.display = selecting ? "none" : "block";
-    $("#pinKeys").style.display = selecting ? "none" : "grid";
+    $("#activeStorage").style.display = (pinning || creatingPin || confirmingPin) ? "grid" : "none";
+    $("#activeStorageName").textContent = pinning && user ? user.callsign : (state.pendingStorageName || "-");
+    $("#storageNameLabel").style.display = creatingName ? "grid" : "none";
+    $("#pinStatus").style.display = showPinStatus ? "grid" : "none";
+    $("#pinKeys").style.display = needsPin ? "grid" : "none";
+    $("#continueStorageBtn").style.display = creatingName ? "block" : "none";
+    $("#resetCreatePinBtn").style.display = state.pinMismatch ? "block" : "none";
+    $("#cancelCreateStorageBtn").style.display = (creatingPin || confirmingPin || state.pinMismatch) ? "block" : "none";
     $("#createStorageBtn").style.display = selecting ? "block" : "none";
-    $("#backToStoragesBtn").style.display = creating && state.users.length ? "block" : "none";
+    $("#backToStoragesBtn").style.display = creatingName && state.users.length ? "block" : "none";
     $("#logoutLoginBtn").style.display = pinning ? "block" : "none";
-    $("#pinStatus").textContent = state.pin.length ? "PIN приймається приховано" : "PIN вводиться приховано";
+    $("#pinStatus").innerHTML = '<span>' + (state.pinMismatch ? "PIN не співпав. Оберіть дію нижче." :
+      (confirmingPin ? "Повторіть PIN для перевірки." :
+      (creatingPin ? "Введіть новий PIN." :
+      (state.pin.length ? "PIN приймається приховано." : "Введіть PIN.")))) + '</span>' + pinDots();
 
     $("#storageList").innerHTML = state.users.map(function (item) {
       return '<div class="storage-row" data-user-row="' + item.id + '">' +
@@ -739,6 +777,44 @@
     });
   }
 
+  function resetCreateDraft(clearName) {
+    state.pin = "";
+    state.pendingPin = "";
+    state.pinMismatch = false;
+    if (clearName && state.users.length) {
+      showLogin(true);
+      return;
+    }
+    state.loginMode = "createName";
+    if (clearName) {
+      state.pendingStorageName = "";
+      $("#storageNameInput").value = "";
+    }
+    renderLogin();
+  }
+
+  function restartCreatePin() {
+    state.pin = "";
+    state.pendingPin = "";
+    state.pinMismatch = false;
+    state.loginMode = "createPin";
+    renderLogin();
+  }
+
+  function continueStorageCreate() {
+    var storageName = c.clean($("#storageNameInput").value);
+    if (!storageName) return toast("Спочатку назва сховища.");
+    if (state.users.some(function (item) { return item.callsign.toLowerCase() === storageName.toLowerCase(); })) {
+      return toast("Таке сховище вже є.");
+    }
+    state.pendingStorageName = storageName;
+    state.pin = "";
+    state.pendingPin = "";
+    state.pinMismatch = false;
+    state.loginMode = "createPin";
+    renderLogin();
+  }
+
   function drawKeys() {
     $("#pinKeys").innerHTML = ["1","2","3","4","5","6","7","8","9","C","0","<"].map(function (key) {
       var cls = key === "C" || key === "<" ? "button button-outline" : "button button-fill";
@@ -756,26 +832,32 @@
 
   function enter() {
     var user = selectedUser();
-    if (state.loginMode === "create") {
-      var storageName = c.clean($("#storageNameInput").value);
-      if (!storageName) {
+    if (state.loginMode === "createPin") {
+      state.pendingPin = state.pin;
+      state.pin = "";
+      state.pinMismatch = false;
+      state.loginMode = "createConfirm";
+      renderLogin();
+      return;
+    }
+
+    if (state.loginMode === "createConfirm") {
+      if (state.pin !== state.pendingPin) {
         state.pin = "";
+        state.pinMismatch = true;
         renderLogin();
-        toast("Спочатку назва сховища.");
+        toast("PIN не співпав.");
         return;
       }
-      if (state.users.some(function (item) { return item.callsign.toLowerCase() === storageName.toLowerCase(); })) {
-        state.pin = "";
-        renderLogin();
-        toast("Таке сховище вже є.");
-        return;
-      }
-      user = store.createUser(state.users, storageName, state.pin);
+      user = store.createUser(state.users, state.pendingStorageName, state.pin);
       state.userId = user.id;
       state.key = store.dataKey(user, state.pin);
       state.storageName = user.callsign;
       state.tasks = [];
       store.saveTasks(user, state.key, state.tasks);
+      state.pendingStorageName = "";
+      state.pendingPin = "";
+      state.pinMismatch = false;
       unlock();
       toast("Сховище створено.");
       return;
@@ -1205,11 +1287,11 @@
         '<li>Коли виходить оновлення, відкрийте додаток з інтернетом. Якщо стара версія тримається, закрийте додаток повністю і відкрийте знову.</li>' +
       '</ol></div>' +
       '<div class="info-box"><h2>Як працювати</h2><ol>' +
-        '<li>Плюс у нижньому меню відкриває вибір: "ШВИДКА ЗАДАЧА" або "ПОВНА ЗАДАЧА".</li>' +
-        '<li>"ШВИДКА ЗАДАЧА" - це один рядок, дата окремо і тег кнопкою. Дата одразу стоїть сьогодні, її можна змінити одним натиском.</li>' +
+        '<li>Плюс у нижньому меню відкриває вибір: "ШВИДКА" або "ПОВНА".</li>' +
+        '<li>"ШВИДКА" - це один рядок, дата окремо і тег кнопкою. Дата одразу стоїть сьогодні, її можна змінити одним натиском.</li>' +
         '<li>Швидкий рядок розуміє час на початку: "14:30 перевірити звʼязок", "14 перевірити звʼязок" або "14 30 перевірити звʼязок".</li>' +
         '<li>Крапка розділяє назву і примітку: "14:30 перевірити звʼязок. коротка примітка".</li>' +
-        '<li>"ПОВНА ЗАДАЧА" відкриває звичайну форму з усіма полями, дорученням, приміткою та етапами.</li>' +
+        '<li>"ПОВНА" відкриває звичайну форму з усіма полями, дорученням, приміткою та етапами.</li>' +
         '<li>"Всі" показує головний список усіх активних задач.</li>' +
         '<li>"Мої" показує задачі без доручення іншому виконавцю.</li>' +
         '<li>"Іншим" показує задачі, де заповнено поле "Кому доручена задача".</li>' +
@@ -1267,7 +1349,7 @@
       '</ul></div>' +
       '<div class="info-box"><h2>Про автора та додаток</h2>' +
         '<p><strong>НА-КОНТРОЛІ</strong> створено як простий особистий задачник для швидкої фіксації задач, етапів і доручень.</p>' +
-        '<p>Версія: <strong>1.0.4</strong>.</p>' +
+        '<p>Версія: <strong>1.0.5</strong>.</p>' +
         '<p>Автор і власник ідеї: <strong>ShuviDoula</strong>.</p>' +
         '<ul><li>GitHub: github.com/ShuviDoula</li><li>Сайт: використайте GitHub Pages URL цього додатку.</li></ul>' +
       '</div>';
@@ -1346,14 +1428,7 @@
 
   function openCreateChoice() {
     closeServiceMenu();
-    f7.dialog.create({
-      title: "Нова задача",
-      text: "Оберіть формат створення.",
-      buttons: [
-        { text: "ШВИДКА ЗАДАЧА", bold: true, onClick: openQuickTaskForm },
-        { text: "ПОВНА ЗАДАЧА", onClick: function () { openTaskForm(); } }
-      ]
-    }).open();
+    openCreateChoiceModal();
   }
 
   function saveQuickTaskForm(event) {
@@ -1625,22 +1700,38 @@
     });
     $("#createStorageBtn").addEventListener("click", function () {
       state.userId = "";
-      state.loginMode = "create";
+      state.loginMode = "createName";
       state.pin = "";
+      state.pendingPin = "";
+      state.pendingStorageName = "";
+      state.pinMismatch = false;
       $("#storageNameInput").value = "";
       renderLogin();
     });
+    $("#continueStorageBtn").addEventListener("click", continueStorageCreate);
+    $("#storageNameInput").addEventListener("keydown", function (event) {
+      if (event.key === "Enter" && state.loginMode === "createName") {
+        event.preventDefault();
+        continueStorageCreate();
+      }
+    });
+    $("#resetCreatePinBtn").addEventListener("click", restartCreatePin);
+    $("#cancelCreateStorageBtn").addEventListener("click", function () { resetCreateDraft(true); });
     $("#backToStoragesBtn").addEventListener("click", function () { showLogin(true); });
     $("#logoutLoginBtn").addEventListener("click", function () { showLogin(true); });
 
     document.addEventListener("keydown", function (event) {
       if (!$("#loginScreen").hidden) {
-        if (/^\d$/.test(event.key)) keyPress(event.key);
-        if (event.key === "Backspace") keyPress("<");
+        var targetTag = event.target && event.target.tagName ? event.target.tagName.toLowerCase() : "";
+        var typingText = targetTag === "input" || targetTag === "textarea";
+        var pinVisible = $("#pinKeys").style.display !== "none";
+        if (!typingText && pinVisible && /^\d$/.test(event.key)) keyPress(event.key);
+        if (!typingText && pinVisible && event.key === "Backspace") keyPress("<");
       }
       if (event.key === "Escape") {
         closeTaskModal();
         closeQuickTaskModal();
+        closeCreateChoiceModal();
         closeExchangeModal();
         closeKeysModal();
         closeServiceMenu();
@@ -1649,6 +1740,18 @@
     });
 
     $("#taskForm").addEventListener("submit", saveTaskForm);
+    $("#closeCreateChoice").addEventListener("click", closeCreateChoiceModal);
+    $("#createChoicePopup").addEventListener("click", function (event) {
+      if (event.target.id === "createChoicePopup") closeCreateChoiceModal();
+    });
+    $("#quickCreateBtn").addEventListener("click", function () {
+      closeCreateChoiceModal();
+      openQuickTaskForm();
+    });
+    $("#fullCreateBtn").addEventListener("click", function () {
+      closeCreateChoiceModal();
+      openTaskForm();
+    });
     $("#quickTaskForm").addEventListener("submit", saveQuickTaskForm);
     $("#closeQuickTaskPopup").addEventListener("click", closeQuickTaskModal);
     $("#cancelQuickTask").addEventListener("click", closeQuickTaskModal);

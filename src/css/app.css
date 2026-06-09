@@ -246,6 +246,8 @@ a {
 }
 
 .pin-status {
+  display: grid;
+  gap: 10px;
   border: 1px solid var(--bd-line);
   border-radius: 8px;
   background: var(--bd-bg);
@@ -253,6 +255,25 @@ a {
   padding: 11px 12px;
   text-align: center;
   font-size: 16px;
+}
+
+.pin-dots {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.pin-dots span {
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--bd-olive-2);
+  border-radius: 999px;
+  background: transparent;
+}
+
+.pin-dots span.filled {
+  background: var(--bd-olive);
+  border-color: var(--bd-olive);
 }
 
 .pin-keys {
@@ -720,6 +741,52 @@ a {
   color: var(--bd-danger) !important;
 }
 
+.choice-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: none;
+  place-items: end center;
+  background: rgba(23, 27, 18, .28);
+  padding: 12px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+.choice-modal.active {
+  display: grid;
+}
+
+.choice-sheet {
+  width: min(420px, 100%);
+  border: 1px solid var(--bd-line);
+  border-radius: 10px;
+  background: var(--bd-white);
+  box-shadow: 0 16px 34px rgba(23, 27, 18, .18);
+  overflow: hidden;
+}
+
+.choice-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid var(--bd-line);
+}
+
+.choice-head h2 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.choice-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px;
+}
+
 .task-modal {
   position: fixed;
   inset: 0;
@@ -831,14 +898,19 @@ a {
   color: var(--bd-ink);
   padding: 12px;
   text-align: left;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  gap: 8px;
+  align-items: center;
 }
 
 .own-key-card .key-card-title {
   background: var(--bd-soft);
 }
 
-.key-card-title strong,
-.key-card-title span {
+.key-card-copy,
+.key-card-copy strong,
+.key-card-copy span {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -846,10 +918,22 @@ a {
   white-space: nowrap;
 }
 
-.key-card-title span {
+.key-card-copy span {
   color: var(--bd-muted);
   font-size: 13px;
   margin-top: 2px;
+}
+
+.key-card-state {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--bd-line);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: var(--bd-olive);
+  font-size: 20px;
+  font-weight: 900;
 }
 
 .key-card-body {
