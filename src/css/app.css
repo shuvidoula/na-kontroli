@@ -177,12 +177,30 @@ a {
   gap: 8px;
 }
 
-.storage-list button {
+.storage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.storage-list button,
+.storage-open {
   min-height: 48px;
+}
+
+.storage-open {
   justify-content: space-between;
   text-align: left;
   border-color: var(--bd-line);
   color: var(--bd-ink);
+}
+
+.storage-delete {
+  min-width: 0;
+  border-color: #d8b4ad;
+  color: #9d3028;
+  font-weight: 900;
 }
 
 .storage-box {

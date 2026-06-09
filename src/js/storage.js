@@ -94,15 +94,18 @@
     localStorage.removeItem(oldDataStoreKey(user));
   }
 
-  function wipeAll(users) {
-    users.forEach(function (user) {
-      localStorage.removeItem(dataStoreKey(user));
-      localStorage.removeItem(oldDataStoreKey(user));
-    });
-    localStorage.removeItem(USERS_KEY);
-    localStorage.removeItem(OLD_USERS_KEY);
-    localStorage.removeItem(OLD_AUTH_KEY);
-    localStorage.removeItem(OLD_DATA_KEY);
+  function deleteUser(users, userId) {
+    var user = users.find(function (item) { return item.id === userId; });
+    if (!user) return users;
+    localStorage.removeItem(dataStoreKey(user));
+    localStorage.removeItem(oldDataStoreKey(user));
+    if (user.legacy) {
+      localStorage.removeItem(OLD_AUTH_KEY);
+      localStorage.removeItem(OLD_DATA_KEY);
+    }
+    var next = users.filter(function (item) { return item.id !== userId; });
+    saveUsers(next);
+    return next;
   }
 
   window.BezStore = {
@@ -113,6 +116,6 @@
     dataKey: dataKey,
     loadTasks: loadTasks,
     saveTasks: saveTasks,
-    wipeAll: wipeAll
+    deleteUser: deleteUser
   };
 })();

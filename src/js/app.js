@@ -113,11 +113,19 @@
   }
 
   function accessStoreKey() {
-    return "nk_exchange_key_" + (state.userId || "none");
+    return accessStoreKeyFor(state.userId || "none");
+  }
+
+  function accessStoreKeyFor(userId) {
+    return "nk_exchange_key_" + userId;
   }
 
   function oldAccessStoreKey() {
-    return "bez_exchange_key_" + (state.userId || "none");
+    return oldAccessStoreKeyFor(state.userId || "none");
+  }
+
+  function oldAccessStoreKeyFor(userId) {
+    return "bez_exchange_key_" + userId;
   }
 
   function activeAccessKey() {
@@ -607,9 +615,26 @@
     $("#pinStatus").textContent = state.pin.length ? "PIN приймається приховано" : "PIN вводиться приховано";
 
     $("#storageList").innerHTML = state.users.map(function (item) {
-      return '<button class="button button-outline" type="button" data-user="' + item.id + '">' +
-        '<span>' + c.escapeHtml(item.callsign) + '</span><span>></span></button>';
+      return '<div class="storage-row" data-user-row="' + item.id + '">' +
+        '<button class="button button-outline storage-open" type="button" data-user="' + item.id + '">' +
+          '<span>' + c.escapeHtml(item.callsign) + '</span><span>></span></button>' +
+        '<button class="button button-outline storage-delete" type="button" data-delete-user="' + item.id + '" aria-label="Видалити сховище">x</button>' +
+      '</div>';
     }).join("");
+  }
+
+  function deleteStorage(userId) {
+    var user = state.users.find(function (item) { return item.id === userId; });
+    if (!user) return;
+    f7.dialog.confirm('Видалити сховище "' + user.callsign + '"? Це видалить задачі тільки цього сховища.', "НА-КОНТРОЛІ", function () {
+      state.users = store.deleteUser(state.users, user.id);
+      localStorage.removeItem(accessStoreKeyFor(user.id));
+      localStorage.removeItem(oldAccessStoreKeyFor(user.id));
+      state.userId = "";
+      state.pin = "";
+      showLogin(true);
+      toast("Сховище видалено.");
+    });
   }
 
   function drawKeys() {
@@ -1077,6 +1102,7 @@
         '<li>Список сортується за датою і часом, якщо час вказаний.</li>' +
         '<li>Етапи допомагають розкласти задачу на прості кроки. У правці їх можна перетягувати за ручку ≡.</li>' +
         '<li>Кнопка "Зроблено" переносить задачу у готові. У виконаній задачі вона змінюється на "Повернутись до виконання".</li>' +
+        '<li>Сховище видаляється тільки на екрані вибору сховищ, кнопкою поруч із конкретною назвою. Глобального видалення всіх сховищ немає.</li>' +
       '</ol></div>' +
       '<div class="info-box"><h2>Обмін задачами</h2><ol>' +
         '<li>У меню зверху відкрийте "Ключі". Там є дві частини: "Мій ключ" і "Книга ключів".</li>' +
@@ -1115,6 +1141,7 @@
         '<li>Швидке розділення задач: "Мої" для особистого виконання, "Іншим" для контролю доручених.</li>' +
         '<li>Локальні нагадування допомагають не пропустити задачу з указаним часом.</li>' +
         '<li>Бекап та імпорт дозволяють перенести або зберегти робочий список.</li>' +
+        '<li>На телефоні бекап може відкривати системне меню поширення. Якщо файл не зʼявився у завантаженнях, копія JSON також кладеться в буфер обміну.</li>' +
         '<li>Framework7 PWA: локальний стек, офлайн-кеш, toast/dialog і підготовка під майбутні компоненти.</li>' +
         '<li>Оновлення приходять через GitHub Pages і service worker.</li>' +
       '</ul></div>' +
@@ -1266,16 +1293,34 @@
   function exportData() {
     var payload = { app: "НА-КОНТРОЛІ", storageName: state.storageName, exportedAt: new Date().toISOString(), tasks: state.tasks };
     var json = JSON.stringify(payload, null, 2);
-    var blob = new Blob([json], { type: "application/json;charset=utf-8" });
+    var filename = "na-kontroli-backup-" + c.today() + ".json";
+    var blob = new Blob([json], { type: "application/json" });
+    var file = new File([blob], filename, { type: "application/json" });
+    if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+      navigator.share({
+        title: "Бекап НА-КОНТРОЛІ",
+        text: "Резервна копія сховища " + state.storageName,
+        files: [file]
+      }).then(function () {
+        toast("Бекап передано в системне меню.");
+      }).catch(function () {
+        toast("Бекап не передано.");
+      });
+      return;
+    }
     var href = URL.createObjectURL(blob);
     var a = document.createElement("a");
     a.href = href;
-    a.download = "na-kontroli-backup-" + c.today() + ".json";
+    a.download = filename;
+    a.target = "_blank";
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(function () { URL.revokeObjectURL(href); }, 1000);
-    toast("Бекап створено. Перевірте завантаження.");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(json).catch(function () {});
+    }
+    toast("Бекап створено. Якщо файл не зʼявився, копія також у буфері.");
   }
 
   function importData(file) {
@@ -1356,6 +1401,11 @@
       if (button) keyPress(button.dataset.key);
     });
     $("#storageList").addEventListener("click", function (event) {
+      var deleteButton = event.target.closest("[data-delete-user]");
+      if (deleteButton) {
+        deleteStorage(deleteButton.dataset.deleteUser);
+        return;
+      }
       var button = event.target.closest("[data-user]");
       if (!button) return;
       state.userId = button.dataset.user;
@@ -1544,15 +1594,6 @@
       event.target.value = "";
     });
     $("#logoutBtn").addEventListener("click", function () { closeServiceMenu(); showLogin(true); });
-    $("#wipeBtn").addEventListener("click", function () {
-      closeServiceMenu();
-      f7.dialog.confirm("Стерти всі локальні дані?", "НА-КОНТРОЛІ", function () {
-        store.wipeAll(state.users);
-        state.users = [];
-        showLogin(false);
-        toast("Стерто.");
-      });
-    });
   }
 
   drawKeys();
