@@ -98,12 +98,6 @@
         <div class="popup-content">
           <form id="taskForm" class="task-form">
             <input id="taskId" type="hidden">
-            <div class="quick-task-box">
-              <label class="field-label">Швидкий ввід
-                <input id="quickTaskInput" type="text" maxlength="220" placeholder="14:30 перевірити звʼязок #Т @BRAVO">
-              </label>
-              <button id="applyQuickTask" class="button button-outline" type="button">Розібрати</button>
-            </div>
             <label class="field-label">Задача
               <input id="taskTitle" type="text" required maxlength="140" placeholder="Що зробити">
             </label>
@@ -147,6 +141,35 @@
         <div class="form-actions task-sheet-actions">
           <button class="button button-fill" type="submit" form="taskForm">Зберегти</button>
           <button id="cancelTask" class="button button-outline" type="button">Скасувати</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="quickTaskPopup" class="task-modal" role="dialog" aria-modal="true" aria-labelledby="quickTaskPopupTitle">
+      <div class="task-sheet">
+        <div class="task-sheet-head">
+          <h2 id="quickTaskPopupTitle">Швидка задача</h2>
+          <button id="closeQuickTaskPopup" class="icon-button" type="button" aria-label="Закрити">x</button>
+        </div>
+        <div class="popup-content">
+          <form id="quickTaskForm" class="task-form">
+            <label class="field-label">Дата
+              <input id="quickTaskDate" type="date" required>
+            </label>
+            <label class="field-label">Один рядок
+              <input id="quickTaskLine" type="text" maxlength="240" placeholder="14:30 перевірити звʼязок. коротка примітка">
+            </label>
+            <div class="quick-tags" role="group" aria-label="Тег задачі">
+              <button class="quick-tag personal" type="button" data-quick-tag="personal">О</button>
+              <button class="quick-tag control" type="button" data-quick-tag="control">К</button>
+              <button class="quick-tag urgent" type="button" data-quick-tag="urgent">Т</button>
+              <button class="quick-tag active" type="button" data-quick-tag="">Без тегу</button>
+            </div>
+          </form>
+        </div>
+        <div class="form-actions task-sheet-actions">
+          <button class="button button-fill" type="submit" form="quickTaskForm">Створити</button>
+          <button id="cancelQuickTask" class="button button-outline" type="button">Скасувати</button>
         </div>
       </div>
     </div>

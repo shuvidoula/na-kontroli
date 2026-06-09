@@ -27,6 +27,7 @@
     page: "tasks",
     filter: "all",
     tagFilter: "all",
+    quickTag: "",
     query: "",
     currentTaskId: "",
     formStages: [],
@@ -79,6 +80,14 @@
 
   function closeTaskModal() {
     $("#taskPopup").classList.remove("active");
+  }
+
+  function openQuickTaskModal() {
+    $("#quickTaskPopup").classList.add("active");
+  }
+
+  function closeQuickTaskModal() {
+    $("#quickTaskPopup").classList.remove("active");
   }
 
   function openExchangeModal(mode, text) {
@@ -588,76 +597,50 @@
     return text || "";
   }
 
-  function addDays(date, days) {
-    var next = new Date(date.getTime());
-    next.setDate(next.getDate() + days);
-    return next.toISOString().slice(0, 10);
+  function formatDate(value) {
+    if (!value) return "";
+    var parts = String(value).split("-");
+    if (parts.length === 3) return parts[2] + "." + parts[1] + "." + parts[0];
+    return value;
   }
 
-  function parseQuickTask() {
-    var input = $("#quickTaskInput");
-    var raw = c.clean(input.value);
-    if (!raw) return;
-    var parts = raw.split(/\s+/);
-    var title = [];
-    var assignee = "";
-    var tag = "";
-    var date = "";
+  function normalizeQuickTime(hour, minute) {
+    var h = Number(hour);
+    var m = Number(minute || 0);
+    if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) return "";
+    return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+  }
+
+  function parseQuickLine(raw) {
+    var text = c.clean(raw);
     var time = "";
-    parts.forEach(function (part) {
-      var lower = part.toLowerCase();
-      if (/^@\S+/.test(part)) {
-        assignee = part.slice(1);
-        return;
+    var rest = text;
+    var match = text.match(/^(\d{1,2}):(\d{2})\s+(.+)$/);
+    if (match) {
+      time = normalizeQuickTime(match[1], match[2]);
+      rest = match[3];
+    } else {
+      match = text.match(/^(\d{1,2})\s+(\d{1,2})\s+(.+)$/);
+      if (match) {
+        time = normalizeQuickTime(match[1], match[2]);
+        rest = match[3];
+      } else {
+        match = text.match(/^(\d{1,2})\s+(.+)$/);
+        if (match) {
+          time = normalizeQuickTime(match[1], 0);
+          rest = match[2];
+        }
       }
-      if (/^#(о|o|особисте|особисто)$/i.test(part)) {
-        tag = "personal";
-        return;
-      }
-      if (/^#(к|k|контроль|на-контролі|контролі)$/i.test(part)) {
-        tag = "control";
-        return;
-      }
-      if (/^#(т|t|терміново|термінове|срочно)$/i.test(part)) {
-        tag = "urgent";
-        return;
-      }
-      if (lower === "сьогодні" || lower === "сегодня") {
-        date = c.today();
-        return;
-      }
-      if (lower === "завтра") {
-        date = addDays(new Date(), 1);
-        return;
-      }
-      if (/^\d{1,2}:\d{2}$/.test(part)) {
-        var bits = part.split(":");
-        time = String(bits[0]).padStart(2, "0") + ":" + bits[1];
-        return;
-      }
-      if (/^\d{3,4}$/.test(part)) {
-        var compact = part.padStart(4, "0");
-        time = compact.slice(0, 2) + ":" + compact.slice(2);
-        return;
-      }
-      if (/^\d{1,2}\.\d{1,2}(\.\d{2,4})?$/.test(part)) {
-        var d = part.split(".");
-        var year = d[2] ? (d[2].length === 2 ? "20" + d[2] : d[2]) : String(new Date().getFullYear());
-        date = year + "-" + d[1].padStart(2, "0") + "-" + d[0].padStart(2, "0");
-        return;
-      }
-      title.push(part);
-    });
-    if (title.length) $("#taskTitle").value = title.join(" ");
-    if (date) $("#taskDate").value = date;
-    if (time) $("#taskTime").value = time;
-    if (tag) $("#taskTag").value = tag;
-    if (assignee) {
-      $("#taskAssignee").value = assignee;
-      $(".delegate-box").open = true;
     }
-    input.value = "";
-    toast("Швидкий ввід розібрано.");
+    if (/^\d/.test(text) && !time) return { error: "Час має бути у форматі 14:30, 14 або 14 30." };
+    var dot = rest.indexOf(".");
+    var title = dot >= 0 ? rest.slice(0, dot) : rest;
+    var note = dot >= 0 ? rest.slice(dot + 1) : "";
+    return {
+      time: time,
+      title: c.clean(title),
+      note: c.clean(note)
+    };
   }
 
   function lines(text) {
@@ -1107,7 +1090,7 @@
         (meta ? '<span class="task-tag ' + meta.cls + '" title="' + c.escapeHtml(meta.label) + '">' + meta.letter + '</span>' : '') +
         '<div><div class="task-title">' + c.escapeHtml(task.title) + '</div>' +
         '<div class="meta"><span class="pill">' + c.escapeHtml(label(task.status)) + '</span><span class="pill">' +
-        c.escapeHtml(task.date || "") + (task.time ? " " + c.escapeHtml(task.time) : "") + '</span>' +
+        c.escapeHtml(formatDate(task.date)) + (task.time ? " " + c.escapeHtml(task.time) : "") + '</span>' +
         (overdue ? '<span class="pill danger-pill">Прострочено</span>' : '') +
         (meta ? '<span class="pill">' + c.escapeHtml(meta.label) + '</span>' : '') +
         (task.assignee ? '<span class="pill">' + c.escapeHtml(task.assignee) + '</span>' : '') +
@@ -1191,7 +1174,7 @@
       '<div class="detail-top"><button class="button button-outline" type="button" data-action="backTasks">Назад</button><button class="button button-fill" type="button" data-action="editTask">Правка</button></div>' +
       '<article class="detail-card">' +
         '<div class="detail-title">' + c.escapeHtml(task.title) + '</div>' +
-        '<div class="meta"><span class="pill">' + c.escapeHtml(label(task.status)) + '</span><span class="pill">' + c.escapeHtml(task.date || "") +
+        '<div class="meta"><span class="pill">' + c.escapeHtml(label(task.status)) + '</span><span class="pill">' + c.escapeHtml(formatDate(task.date)) +
         (task.time ? " " + c.escapeHtml(task.time) : "") + '</span>' +
         (overdue ? '<span class="pill danger-pill">Прострочено</span>' : '') +
         (meta ? '<span class="pill">' + c.escapeHtml(meta.label) + '</span>' : '') +
@@ -1222,7 +1205,11 @@
         '<li>Коли виходить оновлення, відкрийте додаток з інтернетом. Якщо стара версія тримається, закрийте додаток повністю і відкрийте знову.</li>' +
       '</ol></div>' +
       '<div class="info-box"><h2>Як працювати</h2><ol>' +
-        '<li>Плюс у нижньому меню швидко створює задачу.</li>' +
+        '<li>Плюс у нижньому меню відкриває вибір: "ШВИДКА ЗАДАЧА" або "ПОВНА ЗАДАЧА".</li>' +
+        '<li>"ШВИДКА ЗАДАЧА" - це один рядок, дата окремо і тег кнопкою. Дата одразу стоїть сьогодні, її можна змінити одним натиском.</li>' +
+        '<li>Швидкий рядок розуміє час на початку: "14:30 перевірити звʼязок", "14 перевірити звʼязок" або "14 30 перевірити звʼязок".</li>' +
+        '<li>Крапка розділяє назву і примітку: "14:30 перевірити звʼязок. коротка примітка".</li>' +
+        '<li>"ПОВНА ЗАДАЧА" відкриває звичайну форму з усіма полями, дорученням, приміткою та етапами.</li>' +
         '<li>"Всі" показує головний список усіх активних задач.</li>' +
         '<li>"Мої" показує задачі без доручення іншому виконавцю.</li>' +
         '<li>"Іншим" показує задачі, де заповнено поле "Кому доручена задача".</li>' +
@@ -1232,7 +1219,7 @@
         '<li>Список сортується за датою і часом, якщо час вказаний.</li>' +
         '<li>Етапи допомагають розкласти задачу на прості кроки. У правці їх можна перетягувати за ручку ≡.</li>' +
         '<li>Кнопка "Зроблено" переносить задачу у готові. У виконаній задачі вона змінюється на "Повернутись до виконання".</li>' +
-        '<li>Швидкий ввід розуміє час, дату, тег і виконавця. Приклад: "14:30 перевірити звʼязок #Т @BRAVO".</li>' +
+        '<li>У списках дата показується у форматі день.місяць.рік, наприклад 10.06.2026.</li>' +
         '<li>Якщо час задачі минув, а задача не виконана, вона підсвічується як прострочена.</li>' +
         '<li>Сховище видаляється тільки на екрані вибору сховищ, кнопкою поруч із конкретною назвою. Для видалення треба написати "ТАК ВИДАЛИТИ".</li>' +
       '</ol></div>' +
@@ -1280,7 +1267,7 @@
       '</ul></div>' +
       '<div class="info-box"><h2>Про автора та додаток</h2>' +
         '<p><strong>НА-КОНТРОЛІ</strong> створено як простий особистий задачник для швидкої фіксації задач, етапів і доручень.</p>' +
-        '<p>Версія: <strong>1.0</strong>.</p>' +
+        '<p>Версія: <strong>1.0.4</strong>.</p>' +
         '<p>Автор і власник ідеї: <strong>ShuviDoula</strong>.</p>' +
         '<ul><li>GitHub: github.com/ShuviDoula</li><li>Сайт: використайте GitHub Pages URL цього додатку.</li></ul>' +
       '</div>';
@@ -1336,6 +1323,65 @@
     if (window.matchMedia("(pointer: fine)").matches) {
       setTimeout(function () { $("#taskTitle").focus(); }, 30);
     }
+  }
+
+  function renderQuickTags() {
+    document.querySelectorAll("[data-quick-tag]").forEach(function (button) {
+      button.classList.toggle("active", (button.dataset.quickTag || "") === state.quickTag);
+    });
+  }
+
+  function openQuickTaskForm() {
+    clearToast();
+    closeServiceMenu();
+    state.quickTag = "";
+    $("#quickTaskDate").value = c.today();
+    $("#quickTaskLine").value = "";
+    renderQuickTags();
+    openQuickTaskModal();
+    if (window.matchMedia("(pointer: fine)").matches) {
+      setTimeout(function () { $("#quickTaskLine").focus(); }, 30);
+    }
+  }
+
+  function openCreateChoice() {
+    closeServiceMenu();
+    f7.dialog.create({
+      title: "Нова задача",
+      text: "Оберіть формат створення.",
+      buttons: [
+        { text: "ШВИДКА ЗАДАЧА", bold: true, onClick: openQuickTaskForm },
+        { text: "ПОВНА ЗАДАЧА", onClick: function () { openTaskForm(); } }
+      ]
+    }).open();
+  }
+
+  function saveQuickTaskForm(event) {
+    event.preventDefault();
+    var parsed = parseQuickLine($("#quickTaskLine").value);
+    if (parsed.error) return toast(parsed.error);
+    if (!parsed.title) return toast("Напишіть, що зробити.");
+    var task = {
+      id: c.id(),
+      syncId: c.id(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      title: parsed.title,
+      date: $("#quickTaskDate").value || c.today(),
+      time: parsed.time,
+      tag: state.quickTag || "",
+      assignee: "",
+      status: "todo",
+      note: parsed.note,
+      items: [],
+      doneAt: ""
+    };
+    state.tasks.push(task);
+    saveTasks();
+    closeQuickTaskModal();
+    state.currentTaskId = task.id;
+    showPage("task");
+    toast("Швидку задачу створено.");
   }
 
   function saveTaskForm(event) {
@@ -1594,6 +1640,7 @@
       }
       if (event.key === "Escape") {
         closeTaskModal();
+        closeQuickTaskModal();
         closeExchangeModal();
         closeKeysModal();
         closeServiceMenu();
@@ -1602,12 +1649,15 @@
     });
 
     $("#taskForm").addEventListener("submit", saveTaskForm);
-    $("#applyQuickTask").addEventListener("click", parseQuickTask);
-    $("#quickTaskInput").addEventListener("keydown", function (event) {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        parseQuickTask();
-      }
+    $("#quickTaskForm").addEventListener("submit", saveQuickTaskForm);
+    $("#closeQuickTaskPopup").addEventListener("click", closeQuickTaskModal);
+    $("#cancelQuickTask").addEventListener("click", closeQuickTaskModal);
+    $("#quickTaskPopup").addEventListener("click", function (event) {
+      if (event.target.id === "quickTaskPopup") closeQuickTaskModal();
+      var tagButton = event.target.closest("[data-quick-tag]");
+      if (!tagButton) return;
+      state.quickTag = tagButton.dataset.quickTag || "";
+      renderQuickTags();
     });
     $("#taskStageEditor").addEventListener("input", function (event) {
       var input = event.target.closest("[data-stage-input]");
@@ -1743,7 +1793,7 @@
     });
     $("#navNew").addEventListener("click", function (event) {
       event.preventDefault();
-      openTaskForm();
+      openCreateChoice();
     });
     $("#navAll").addEventListener("click", function (event) {
       event.preventDefault();
