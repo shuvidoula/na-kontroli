@@ -750,17 +750,7 @@
 
   function renderTasksPage() {
     var list = filtered(false);
-    var active = state.tasks.filter(function (task) { return task.status !== "done" && task.status !== "archived"; });
-    var todayCount = active.filter(function (task) { return task.date === c.today(); }).length;
-    var overdueCount = active.filter(isOverdue).length;
-    var delegatedCount = active.filter(function (task) { return task.status === "run"; }).length;
-    $("#tasksPage").innerHTML =
-      '<div class="top-stats">' +
-        '<button class="stat" type="button" data-action="quickFilter" data-filter="today"><b>' + todayCount + '</b><span>Сьогодні</span></button>' +
-        '<button class="stat" type="button" data-action="quickFilter" data-filter="overdue"><b>' + overdueCount + '</b><span>Прострочено</span></button>' +
-        '<button class="stat" type="button" data-action="quickFilter" data-filter="delegated"><b>' + delegatedCount + '</b><span>Іншим</span></button>' +
-      '</div>' +
-      tagFilterHtml() +
+    $("#tasksPage").innerHTML = tagFilterHtml() +
       '<div class="search-wrap"><input id="searchInput" type="search" placeholder="Пошук" value="' + c.escapeHtml(state.query) + '"></div>' +
       '<div class="task-list">' + (list.length ? list.map(taskCard).join("") : '<div class="empty-state">Тут поки чисто.</div>') + '</div>';
   }
@@ -925,7 +915,7 @@
       '</ul></div>' +
       '<div class="info-box"><h2>Про автора та додаток</h2>' +
         '<p><strong>НА-КОНТРОЛІ</strong> створено як простий особистий задачник для швидкої фіксації задач, етапів і доручень.</p>' +
-        '<div class="version-row"><p>Версія: <strong>1.1.0</strong>.</p><button class="button button-outline" type="button" data-action="openUpdates">Що нового</button></div>' +
+        '<div class="version-row"><p>Версія: <strong>1.1.1</strong>.</p><button class="button button-outline" type="button" data-action="openUpdates">Що нового</button></div>' +
         '<p>Автор і власник ідеї: <strong>ShuviDoula</strong>.</p>' +
         '<ul><li>GitHub: github.com/ShuviDoula</li><li>Сайт: ' + APP_SHARE_URL + '</li></ul>' +
       '</div>';
@@ -939,6 +929,15 @@
 
   function renderUpdatesPage() {
     var updates = [
+      {
+        version: "1.1.1",
+        title: "Полірування навігації і бекапу",
+        items: [
+          "Прибрано верхню кнопку Назад зі сторінок Що нового і Налаштування.",
+          "Прибрано лічильники-фільтри Сьогодні, Прострочено та Іншим з головної.",
+          "Бекап на телефоні тепер обирає один шлях створення, щоб не дублювати файли."
+        ]
+      },
       {
         version: "1.1.0",
         title: "Налаштування, архів і посилене сховище",
@@ -1037,7 +1036,7 @@
       }
     ];
     $("#updatesPage").innerHTML =
-      '<div class="detail-top"><button class="button button-outline" type="button" data-action="backGuide">Назад</button><h2>Що нового</h2></div>' +
+      '<div class="detail-top"><h2>Що нового</h2></div>' +
       '<div class="updates-list">' + updates.map(function (item) {
         return '<article class="update-card">' +
           '<div class="update-head"><span>Версія ' + c.escapeHtml(item.version) + '</span><strong>' + c.escapeHtml(item.title) + '</strong></div>' +
@@ -1055,7 +1054,7 @@
   function renderSettingsPage() {
     var archivedCount = archivedTasks().length;
     $("#settingsPage").innerHTML =
-      '<div class="detail-top"><button class="button button-outline" type="button" data-settings-action="backTasks">Назад</button><h2>Налаштування</h2></div>' +
+      '<div class="detail-top"><h2>Налаштування</h2></div>' +
       '<article class="detail-card settings-card">' +
         '<h3>Сповіщення</h3>' +
         '<label class="setting-row"><span>За 1 годину до задачі</span><input type="checkbox" data-setting="notifyHour"' + (state.settings.notifyHour !== false ? " checked" : "") + '></label>' +
@@ -1354,7 +1353,8 @@
     } catch (e) {
       file = null;
     }
-    if (file && navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+    var canShareFile = file && navigator.canShare && navigator.share && navigator.canShare({ files: [file] });
+    if (canShareFile) {
       navigator.share({
         title: "Бекап НА-КОНТРОЛІ",
         text: "Резервна копія сховища " + state.storageName,
@@ -1366,6 +1366,14 @@
       });
       return;
     }
+    if (isIOS() || isAndroid()) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(json).catch(function () {});
+      }
+      openExchangeModal("backup", json);
+      toast("Бекап готовий. JSON також у буфері.");
+      return;
+    }
     var href = URL.createObjectURL(blob);
     var a = document.createElement("a");
     a.href = href;
@@ -1375,11 +1383,7 @@
     a.click();
     a.remove();
     setTimeout(function () { URL.revokeObjectURL(href); }, 1000);
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(json).catch(function () {});
-    }
-    openExchangeModal("backup", json);
-    toast("Бекап створено. Якщо файл не зʼявився, копія також у буфері.");
+    toast("Бекап створено.");
   }
 
   function importData(file) {
@@ -1701,11 +1705,6 @@
       if (!button) return;
       showPage("updates");
     });
-    $("#updatesPage").addEventListener("click", function (event) {
-      var button = event.target.closest("[data-action='backGuide']");
-      if (!button) return;
-      showPage("guide");
-    });
     $("#tasksPage").addEventListener("input", function (event) {
       if (event.target.id === "searchInput") {
         state.query = event.target.value;
@@ -1717,12 +1716,6 @@
       if (!button) return;
       state.tagFilter = button.dataset.tagFilter || "all";
       renderTasksPage();
-    });
-    $("#tasksPage").addEventListener("click", function (event) {
-      var button = event.target.closest("[data-action='quickFilter']");
-      if (!button) return;
-      state.filter = button.dataset.filter || "all";
-      showPage("tasks");
     });
 
     $("#moreBtn").addEventListener("click", function (event) {
