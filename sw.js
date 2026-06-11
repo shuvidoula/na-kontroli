@@ -1,4 +1,4 @@
-const CACHE_NAME = "na-kontroli-pages-v1.1.2";
+const CACHE_NAME = "na-kontroli-pages-v1.1.4";
 const FILES = [
   "./",
   "./index.html",

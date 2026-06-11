@@ -452,6 +452,14 @@ a {
   border-color: #3b8752;
 }
 
+.tag-help {
+  display: block;
+  color: var(--bd-muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
 .version-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

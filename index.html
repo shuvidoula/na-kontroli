@@ -66,7 +66,7 @@
         </div>
         <button id="moreBtn" class="icon-button" type="button" aria-label="Меню">⋮</button>
         <div id="serviceMenu" class="service-menu" hidden>
-          <button id="doneMenuBtn" type="button">Готово</button>
+          <button id="doneMenuBtn" type="button">Виконані</button>
           <button id="settingsMenuBtn" type="button">Налаштування</button>
           <button id="logoutBtn" type="button">Вихід</button>
         </div>
@@ -118,6 +118,7 @@
                 <option value="control">На контролі</option>
                 <option value="urgent">Терміново</option>
               </select>
+              <span class="tag-help">О - особисте, К - на контролі, Т - терміново</span>
             </label>
             <details class="delegate-box">
               <summary>Доручити задачу підлеглому</summary>
@@ -180,6 +181,7 @@
               <button class="quick-tag urgent" type="button" data-quick-tag="urgent">Т</button>
               <button class="quick-tag active" type="button" data-quick-tag="">Без тегу</button>
             </div>
+            <div class="tag-help">О - особисте, К - на контролі, Т - терміново</div>
             <label class="field-label">Примітка
               <textarea id="quickTaskNote" maxlength="1600" placeholder="Вставте повний текст повідомлення або деталі задачі"></textarea>
             </label>

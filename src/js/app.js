@@ -757,7 +757,7 @@
 
   function renderDonePage() {
     var list = filtered(true);
-    $("#donePage").innerHTML = '<div class="detail-top"><h2>Готово</h2></div>' +
+    $("#donePage").innerHTML = '<div class="detail-top"><h2>Виконані</h2></div>' +
       '<div class="task-list">' + (list.length ? list.map(taskCard).join("") : '<div class="empty-state">Виконаних задач немає.</div>') + '</div>';
   }
 
@@ -875,9 +875,10 @@
         '<li>"Всі" показує головний список усіх активних задач.</li>' +
         '<li>"Мої" показує задачі без доручення іншому виконавцю.</li>' +
         '<li>"Іншим" показує задачі, де заповнено поле "Кому доручена задача".</li>' +
-        '<li>"Готово" знаходиться у меню зверху і відкриває виконані задачі.</li>' +
+        '<li>"Виконані" знаходиться у меню зверху і відкриває виконані задачі.</li>' +
         '<li>Зверху списку є швидкі фільтри тегів: "Особисте", "На контролі", "Терміново", "Всі".</li>' +
         '<li>Тег необовʼязковий. У картці він показується літерою: О - особисте, К - на контролі, Т - терміново.</li>' +
+        '<li>11.1. Приклад тлумачення тегів: О - особисте, будь-яка власна задача або нагадування; К - на контролі, якщо вам поставлена задача або прохання кимось; Т - терміново, термінові задачі. Кожен може обрати власне тлумачення, це лише приклад мого бачення.</li>' +
         '<li>Список сортується за датою і часом, якщо час вказаний.</li>' +
         '<li>Етапи допомагають розкласти задачу на прості кроки. У правці їх можна перетягувати за ручку ≡.</li>' +
         '<li>Кнопка "Зроблено" переносить задачу у готові. У виконаній задачі вона змінюється на "Повернутись до виконання".</li>' +
@@ -915,7 +916,7 @@
       '</ul></div>' +
       '<div class="info-box"><h2>Про автора та додаток</h2>' +
         '<p><strong>НА-КОНТРОЛІ</strong> створено як простий особистий задачник для швидкої фіксації задач, етапів і доручень.</p>' +
-        '<div class="version-row"><p>Версія: <strong>1.1.2</strong>.</p><button class="button button-outline" type="button" data-action="openUpdates">Що нового</button></div>' +
+        '<div class="version-row"><p>Версія: <strong>1.1.4</strong>.</p><button class="button button-outline" type="button" data-action="openUpdates">Що нового</button></div>' +
         '<p>Автор і власник ідеї: <strong>ShuviDoula</strong>.</p>' +
         '<ul><li>GitHub: github.com/ShuviDoula</li><li>Сайт: ' + APP_SHARE_URL + '</li></ul>' +
       '</div>';
@@ -929,6 +930,23 @@
 
   function renderUpdatesPage() {
     var updates = [
+      {
+        version: "1.1.4",
+        title: "Пояснення тегів",
+        items: [
+          "Готово перейменовано на Виконані.",
+          "У формах задач додано коротке пояснення тегів О, К, Т.",
+          "У довідник додано пункт 11.1 з прикладом тлумачення тегів."
+        ]
+      },
+      {
+        version: "1.1.3",
+        title: "Ще швидша швидка задача",
+        items: [
+          "Швидку задачу можна створити тільки з приміткою.",
+          "Якщо назву не вказано, додаток поставить Не забути."
+        ]
+      },
       {
         version: "1.1.2",
         title: "Примітка у швидкій задачі",
@@ -1197,13 +1215,13 @@
     var extraNote = c.clean($("#quickTaskNote").value);
     var note = [parsed.note, extraNote].filter(Boolean).join("\n\n");
     if (parsed.error) return toast(parsed.error);
-    if (!parsed.title) return toast("Напишіть, що зробити.");
+    if (!parsed.title && !note) return toast("Напишіть, що зробити.");
     var task = {
       id: c.id(),
       syncId: c.id(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      title: parsed.title,
+      title: parsed.title || "Не забути",
       date: $("#quickTaskDate").value || c.today(),
       time: parsed.time,
       tag: state.quickTag || "",
