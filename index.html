@@ -68,8 +68,6 @@
         <div id="serviceMenu" class="service-menu" hidden>
           <button id="doneMenuBtn" type="button">Готово</button>
           <button id="notifyBtn" type="button">Сповіщення</button>
-          <button id="keysBtn" type="button">Ключі</button>
-          <button id="receivePacketBtn" type="button">Прийняти задачу</button>
           <button id="exportBtn" type="button">Бекап</button>
           <button id="importBtn" type="button">Імпорт</button>
           <button id="logoutBtn" type="button">Вихід</button>
@@ -190,24 +188,6 @@
       </div>
     </div>
 
-    <div id="keysPopup" class="task-modal" role="dialog" aria-modal="true" aria-labelledby="keysPopupTitle">
-      <div class="task-sheet">
-        <div class="task-sheet-head">
-          <h2 id="keysPopupTitle">Ключі</h2>
-          <button id="closeKeysPopup" class="icon-button" type="button" aria-label="Закрити">x</button>
-        </div>
-        <div class="popup-content">
-          <div class="info-box">
-            <p>Мій ключ потрібен, щоб інші могли приймати задачі від вас. Чужі ключі додаються як контакти, щоб ви могли приймати задачі від них.</p>
-          </div>
-          <div id="accessKeyList" class="key-list"></div>
-        </div>
-        <div class="form-actions task-sheet-actions key-actions">
-          <button id="newKeyBtn" class="button button-fill" type="button">Додати</button>
-        </div>
-      </div>
-    </div>
-
     <div id="exchangePopup" class="task-modal" role="dialog" aria-modal="true" aria-labelledby="exchangePopupTitle">
       <div class="task-sheet">
         <div class="task-sheet-head">
@@ -215,8 +195,8 @@
           <button id="closeExchangePopup" class="icon-button" type="button" aria-label="Закрити">x</button>
         </div>
         <div class="popup-content">
-          <label class="field-label">Пакет
-            <textarea id="exchangeText" placeholder="Вставте або скопіюйте пакет НА-КОНТРОЛІ"></textarea>
+          <label id="exchangeTextBox" class="field-label">Бекап
+            <textarea id="exchangeText" placeholder="JSON резервної копії"></textarea>
           </label>
           <div id="transferCompleteBox" class="transfer-complete">
             <label class="field-label">Кому передано
@@ -224,13 +204,9 @@
             </label>
             <button id="finishTransferBtn" class="button button-outline" type="button">Завершити передачу</button>
           </div>
-          <div class="info-box">
-            <p>Задача відкриється тільки якщо у отримувача є ваш ключ або відповідний ключ у книзі. Додаток сам перевірить збережені ключі.</p>
-          </div>
         </div>
         <div class="form-actions task-sheet-actions">
           <button id="copyExchangeBtn" class="button button-fill" type="button">Копіювати</button>
-          <button id="acceptExchangeBtn" class="button button-outline" type="button">Прийняти</button>
         </div>
       </div>
     </div>

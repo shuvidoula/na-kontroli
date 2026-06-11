@@ -12,10 +12,6 @@
     iosTranslucentModals: false
   });
   var REMINDER_INTERVAL = 15 * 60 * 1000;
-  var EXCHANGE_PREFIX = "НА-КОНТРОЛІ:";
-  var OLD_APP_NAME = "\u0411\u0415\u0417-\u0414\u041E\u0413\u0410\u041D\u0418\u0419";
-  var OLD_EXCHANGE_PREFIX = OLD_APP_NAME + ":";
-
   var state = {
     pin: "",
     users: store.migrateOldUser(store.loadUsers()),
@@ -37,12 +33,6 @@
     dragStageId: "",
     notified: {},
     reminderTimer: 0,
-    accessKey: "",
-    accessName: "",
-    accessKeys: [],
-    activeKeyId: "",
-    editingKeyId: "",
-    exchangeMode: "receive",
     exchangeTaskId: "",
     installPrompt: null
   };
@@ -102,11 +92,10 @@
   }
 
   function openExchangeModal(mode, text) {
-    state.exchangeMode = mode || "receive";
-    $("#exchangePopupTitle").textContent = mode === "send" ? "Передати задачу" : (mode === "backup" ? "Бекап" : "Прийняти задачу");
+    $("#exchangePopupTitle").textContent = mode === "send" ? "Передати задачу" : "Бекап";
     $("#exchangeText").value = text || "";
-    $("#copyExchangeBtn").style.display = (mode === "send" || mode === "backup") ? "block" : "none";
-    $("#acceptExchangeBtn").style.display = mode === "receive" ? "block" : "none";
+    $("#exchangeTextBox").style.display = mode === "backup" ? "grid" : "none";
+    $("#copyExchangeBtn").style.display = mode === "backup" ? "block" : "none";
     $("#transferCompleteBox").style.display = mode === "send" ? "grid" : "none";
     if (mode === "send") {
       var task = state.tasks.find(function (item) { return item.id === state.exchangeTaskId; });
@@ -119,286 +108,6 @@
 
   function closeExchangeModal() {
     $("#exchangePopup").classList.remove("active");
-  }
-
-  function openKeysModal() {
-    closeServiceMenu();
-    state.editingKeyId = "";
-    renderKeyLibrary();
-    $("#keysPopup").classList.add("active");
-  }
-
-  function closeKeysModal() {
-    $("#keysPopup").classList.remove("active");
-  }
-
-  function accessStoreKey() {
-    return accessStoreKeyFor(state.userId || "none");
-  }
-
-  function accessStoreKeyFor(userId) {
-    return "nk_exchange_key_" + userId;
-  }
-
-  function oldAccessStoreKey() {
-    return oldAccessStoreKeyFor(state.userId || "none");
-  }
-
-  function oldAccessStoreKeyFor(userId) {
-    return "bez_exchange_key_" + userId;
-  }
-
-  function activeAccessKey() {
-    return state.accessKeys.find(function (item) { return item.kind === "own"; }) || null;
-  }
-
-  function syncActiveAccessKey() {
-    var active = activeAccessKey();
-    state.activeKeyId = active ? active.id : "";
-    state.accessName = active ? active.name : (state.storageName || "");
-    state.accessKey = active ? active.key : "";
-  }
-
-  function normalizeAccessKeys(value) {
-    if (!value) return [];
-    if (Array.isArray(value.keys)) {
-      var result = value.keys.map(function (item) {
-        return {
-          id: item.id || c.id(),
-          label: c.clean(item.label) || "Ключ",
-          name: c.clean(item.name) || state.storageName || "",
-          key: c.clean(item.key),
-          kind: item.kind === "own" ? "own" : "contact"
-        };
-      }).filter(function (item) { return item.key; });
-      if (!value.version || value.version < 3) {
-        var activeId = value.activeKeyId || "";
-        var ownSet = false;
-        var activeItem = result.find(function (item) { return item.id === activeId; }) || result[0];
-        result.forEach(function (item) {
-          if (!ownSet && item === activeItem) {
-            item.kind = "own";
-            item.label = item.label || "Мій ключ";
-            ownSet = true;
-          } else if (item.kind !== "own") {
-            item.kind = "contact";
-          }
-        });
-      }
-      if (!result.some(function (item) { return item.kind === "own"; }) && result[0]) result[0].kind = "own";
-      return result;
-    }
-    if (value.key) {
-      return [{
-        id: value.id || c.id(),
-        label: value.label || "Мій ключ",
-        name: value.name || state.storageName || "",
-        key: value.key,
-        kind: "own"
-      }];
-    }
-    return [];
-  }
-
-  function loadAccessKey() {
-    state.accessKey = "";
-    state.accessName = state.storageName || "";
-    state.accessKeys = [];
-    state.activeKeyId = "";
-    state.editingKeyId = "";
-    try {
-      var raw = localStorage.getItem(accessStoreKey()) || localStorage.getItem(oldAccessStoreKey());
-      if (raw) {
-        var opened = c.openSeal(raw, state.key);
-        try {
-          var parsed = JSON.parse(opened);
-          state.accessKeys = normalizeAccessKeys(parsed);
-          state.activeKeyId = (activeAccessKey() && activeAccessKey().id) || parsed.activeKeyId || "";
-        } catch (e) {
-          state.accessKeys = normalizeAccessKeys({ key: opened, name: state.storageName, label: "Мій ключ" });
-        }
-      }
-    } catch (e) {
-      state.accessKeys = [];
-    }
-    syncActiveAccessKey();
-  }
-
-  function persistAccessKeys() {
-    if (state.accessKeys.length) {
-      localStorage.setItem(accessStoreKey(), c.seal(JSON.stringify({
-        version: 3,
-        activeKeyId: state.activeKeyId,
-        keys: state.accessKeys
-      }), state.key));
-      localStorage.removeItem(oldAccessStoreKey());
-    } else {
-      localStorage.removeItem(accessStoreKey());
-    }
-    syncActiveAccessKey();
-  }
-
-  function ensureOwnKey() {
-    var own = activeAccessKey();
-    if (own) return own;
-    own = {
-      id: c.id(),
-      kind: "own",
-      label: "Мій ключ",
-      name: state.storageName || "",
-      key: ""
-    };
-    state.accessKeys.unshift(own);
-    state.activeKeyId = own.id;
-    return own;
-  }
-
-  function renderKeyLibrary() {
-    var own = ensureOwnKey();
-    var contacts = state.accessKeys.filter(function (item) { return item.kind !== "own"; });
-    var ownOpen = state.editingKeyId === own.id;
-    var html =
-      '<section class="key-card own-key-card" data-key-id="' + own.id + '">' +
-        '<button class="key-card-title" type="button" data-action="toggleKey" aria-expanded="' + (ownOpen ? "true" : "false") + '">' +
-          '<span class="key-card-copy"><strong>МІЙ КЛЮЧ</strong><span>' + c.escapeHtml(own.key ? (own.name || "нік не вказано") : "ключ ще не створено") + '</span></span>' +
-          '<span class="key-card-state" aria-hidden="true">' + (ownOpen ? "−" : "+") + '</span>' +
-        '</button>' +
-        '<div class="key-card-body" ' + (ownOpen ? "" : "hidden") + '>' +
-          '<label class="field-label">Назва<input data-key-field="label" type="text" maxlength="40" value="' + c.escapeHtml(own.label || "Мій ключ") + '"></label>' +
-          '<label class="field-label">Нік<input data-key-field="name" type="text" maxlength="40" value="' + c.escapeHtml(own.name || "") + '"></label>' +
-          '<label class="field-label">Ключ<textarea data-key-field="key" placeholder="Натисніть згенерувати">' + c.escapeHtml(own.key || "") + '</textarea></label>' +
-          '<div class="key-card-actions">' +
-            '<button class="button button-outline" type="button" data-action="copyKey">Копіювати</button>' +
-            '<button class="button button-outline" type="button" data-action="generateOwnKey"' + (own.key ? " disabled" : "") + '>Згенерувати</button>' +
-            '<button class="button button-fill" type="button" data-action="saveKey">Зберегти</button>' +
-          '</div>' +
-        '</div>' +
-      '</section>' +
-      '<div class="key-section-title">Контакти</div>' +
-      contacts.map(function (item) {
-        var open = state.editingKeyId === item.id;
-        return '<section class="key-card" data-key-id="' + item.id + '">' +
-          '<button class="key-card-title" type="button" data-action="toggleKey" aria-expanded="' + (open ? "true" : "false") + '">' +
-            '<span class="key-card-copy"><strong>' + c.escapeHtml(item.label || "Контакт") + '</strong><span>' + c.escapeHtml(item.name || "імʼя не вказано") + '</span></span>' +
-            '<span class="key-card-state" aria-hidden="true">' + (open ? "−" : "+") + '</span>' +
-          '</button>' +
-          '<div class="key-card-body" ' + (open ? "" : "hidden") + '>' +
-            '<label class="field-label">Назва контакту<input data-key-field="label" type="text" maxlength="40" value="' + c.escapeHtml(item.label || "") + '"></label>' +
-            '<label class="field-label">Імʼя контакту<input data-key-field="name" type="text" maxlength="40" value="' + c.escapeHtml(item.name || "") + '"></label>' +
-            '<label class="field-label">Його ключ<textarea data-key-field="key" placeholder="Вставте ключ контакту">' + c.escapeHtml(item.key || "") + '</textarea></label>' +
-            '<div class="key-card-actions contact-actions">' +
-              '<button class="button button-outline" type="button" data-action="copyKey">Копіювати</button>' +
-              '<button class="button button-fill" type="button" data-action="saveKey">Зберегти</button>' +
-              '<button class="button button-outline danger-link" type="button" data-action="deleteKey">Видалити</button>' +
-            '</div>' +
-          '</div>' +
-        '</section>';
-    }).join("");
-    $("#accessKeyList").innerHTML = html;
-  }
-
-  function randomAccessKey() {
-    var bytes = new Uint8Array(32);
-    if (window.crypto && window.crypto.getRandomValues) {
-      window.crypto.getRandomValues(bytes);
-    } else {
-      for (var i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
-    }
-    var packed = "";
-    bytes.forEach(function (byte) { packed += String.fromCharCode(byte); });
-    return btoa(packed).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-  }
-
-  function newKeyForm() {
-    var count = state.accessKeys.filter(function (key) { return key.kind !== "own"; }).length + 1;
-    var item = {
-      id: c.id(),
-      kind: "contact",
-      label: "Контакт " + count,
-      name: "",
-      key: ""
-    };
-    state.accessKeys.push(item);
-    state.editingKeyId = item.id;
-    renderKeyLibrary();
-    toast("Контакт додано.");
-  }
-
-  function selectAccessKey(id) {
-    var item = state.accessKeys.find(function (key) { return key.id === id; });
-    if (!item) return;
-    state.editingKeyId = state.editingKeyId === item.id ? "" : item.id;
-    renderKeyLibrary();
-  }
-
-  function deleteAccessKey(id) {
-    var item = state.accessKeys.find(function (key) { return key.id === id; });
-    if (!item) return;
-    if (item.kind === "own") {
-      toast("Мій ключ не видаляється. Його можна змінити або згенерувати новий.");
-      return;
-    }
-    if (!confirm("Видалити ключ \"" + item.label + "\"? Старі пакети з ним не відкриються.")) return;
-    state.accessKeys = state.accessKeys.filter(function (key) { return key.id !== id; });
-    persistAccessKeys();
-    state.editingKeyId = "";
-    renderKeyLibrary();
-    toast("Ключ видалено.");
-  }
-
-  function keyFieldValue(card, field) {
-    var input = card.querySelector('[data-key-field="' + field + '"]');
-    return input ? c.clean(input.value) : "";
-  }
-
-  function saveKeyCard(card) {
-    var id = card.dataset.keyId;
-    var item = state.accessKeys.find(function (key) { return key.id === id; });
-    if (!item) return;
-    var keyValue = keyFieldValue(card, "key");
-    if (!keyValue) {
-      toast(item.kind === "own" ? "Згенеруйте мій ключ." : "Вставте ключ контакту.");
-      return;
-    }
-    item.label = keyFieldValue(card, "label") || (item.kind === "own" ? "Мій ключ" : "Контакт");
-    item.name = keyFieldValue(card, "name") || (item.kind === "own" ? state.storageName : "");
-    item.key = keyValue;
-    if (item.kind === "own") state.activeKeyId = item.id;
-    persistAccessKeys();
-    state.editingKeyId = item.id;
-    renderKeyLibrary();
-    toast(item.kind === "own" ? "Мій ключ збережено." : "Контакт збережено.");
-  }
-
-  function copyKeyCard(card) {
-    var item = state.accessKeys.find(function (key) { return key.id === card.dataset.keyId; });
-    var keyValue = keyFieldValue(card, "key") || (item ? item.key : "");
-    if (!keyValue) {
-      toast("Ключ порожній.");
-      return;
-    }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(keyValue).then(function () {
-        toast("Ключ скопійовано.");
-      }).catch(function () {
-        toast("Скопіюйте ключ вручну.");
-      });
-      return;
-    }
-    toast("Скопіюйте ключ вручну.");
-  }
-
-  function generateOwnKey(card) {
-    var item = state.accessKeys.find(function (key) { return key.id === card.dataset.keyId; });
-    if (!item || item.kind !== "own") return;
-    var keyInput = card.querySelector('[data-key-field="key"]');
-    if (!keyInput) return;
-    if (c.clean(keyInput.value)) {
-      toast("Щоб згенерувати новий, спочатку очистіть старий ключ.");
-      return;
-    }
-    keyInput.value = randomAccessKey();
-    toast("Мій ключ згенеровано.");
   }
 
   function copyTextFrom(selector, okText) {
@@ -416,21 +125,6 @@
     }
     field.select();
     toast("Скопіюйте виділений текст.");
-  }
-
-  function requireAccessKey() {
-    var own = activeAccessKey();
-    if (own && own.key) return true;
-    toast("Спочатку створіть мій ключ.");
-    openKeysModal();
-    return false;
-  }
-
-  function requireAnyAccessKey() {
-    if (state.accessKeys.some(function (item) { return item.key; })) return true;
-    toast("Спочатку додайте мій ключ або контакт.");
-    openKeysModal();
-    return false;
   }
 
   function notificationSupported() {
@@ -674,11 +368,6 @@
     state.storageName = "";
     state.currentTaskId = "";
     state.notified = {};
-    state.accessKey = "";
-    state.accessName = "";
-    state.accessKeys = [];
-    state.activeKeyId = "";
-    state.editingKeyId = "";
     clearInterval(state.reminderTimer);
     if (!state.users.length) {
       state.userId = "";
@@ -703,7 +392,6 @@
     $("#loginScreen").hidden = true;
     $("#mainScreen").hidden = false;
     $("#currentStorageName").textContent = state.storageName;
-    loadAccessKey();
     showPage("tasks");
     render();
     updateInstallButton();
@@ -768,8 +456,6 @@
     }
     f7.dialog.confirm('Остаточно видалити сховище "' + user.callsign + '"? Це видалить задачі тільки цього сховища.', "НА-КОНТРОЛІ", function () {
       state.users = store.deleteUser(state.users, user.id);
-      localStorage.removeItem(accessStoreKeyFor(user.id));
-      localStorage.removeItem(oldAccessStoreKeyFor(user.id));
       state.userId = "";
       state.pin = "";
       showLogin(true);
@@ -902,164 +588,9 @@
     checkReminders();
   }
 
-  function ensureTaskSyncId(task) {
-    if (!task.syncId) task.syncId = c.id();
-    return task.syncId;
-  }
-
-  function exchangeKey(keyValue) {
-    return "bez-exchange:" + c.hash(keyValue);
-  }
-
-  function cryptoReady() {
-    return window.crypto && window.crypto.subtle && window.TextEncoder && window.TextDecoder;
-  }
-
-  function bytesToBase64(bytes) {
-    var out = "";
-    bytes.forEach(function (byte) { out += String.fromCharCode(byte); });
-    return btoa(out).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-  }
-
-  function base64ToBytes(text) {
-    var normalized = text.replace(/-/g, "+").replace(/_/g, "/");
-    while (normalized.length % 4) normalized += "=";
-    var raw = atob(normalized);
-    var bytes = new Uint8Array(raw.length);
-    for (var i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
-    return bytes;
-  }
-
-  function randomBytes(length) {
-    var bytes = new Uint8Array(length);
-    if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(bytes);
-    else for (var i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
-    return bytes;
-  }
-
-  function deriveExchangeKey(keyValue, salt) {
-    var encoder = new TextEncoder();
-    return window.crypto.subtle.importKey(
-      "raw",
-      encoder.encode(keyValue),
-      "PBKDF2",
-      false,
-      ["deriveKey"]
-    ).then(function (baseKey) {
-      return window.crypto.subtle.deriveKey(
-        { name: "PBKDF2", salt: salt, iterations: 180000, hash: "SHA-256" },
-        baseKey,
-        { name: "AES-GCM", length: 256 },
-        false,
-        ["encrypt", "decrypt"]
-      );
-    });
-  }
-
-  function packExchange(payload, keyItem) {
-    if (!cryptoReady()) return Promise.resolve(EXCHANGE_PREFIX + c.seal(JSON.stringify(payload), exchangeKey(keyItem.key)));
-    var salt = randomBytes(16);
-    var iv = randomBytes(12);
-    var encoder = new TextEncoder();
-    return deriveExchangeKey(keyItem.key, salt).then(function (key) {
-      return window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, encoder.encode(JSON.stringify(payload)));
-    }).then(function (encrypted) {
-      return EXCHANGE_PREFIX + bytesToBase64(new TextEncoder().encode(JSON.stringify({
-        v: 2,
-        kdf: "PBKDF2-SHA256-180000",
-        alg: "AES-GCM-256",
-        s: bytesToBase64(salt),
-        i: bytesToBase64(iv),
-        d: bytesToBase64(new Uint8Array(encrypted))
-      })));
-    });
-  }
-
-  function unpackLegacyExchange(raw, keyItem) {
-    try {
-      return Promise.resolve({
-        keyItem: keyItem,
-        payload: JSON.parse(c.openSeal(raw, exchangeKey(keyItem.key)))
-      });
-    } catch (e) {
-      return Promise.reject(e);
-    }
-  }
-
-  function unpackExchangeWithKey(text, keyItem) {
-    var raw = c.clean(text);
-    if (raw.indexOf(EXCHANGE_PREFIX) === 0) raw = raw.slice(EXCHANGE_PREFIX.length);
-    if (raw.indexOf(OLD_EXCHANGE_PREFIX) === 0) raw = raw.slice(OLD_EXCHANGE_PREFIX.length);
-    if (!cryptoReady()) return unpackLegacyExchange(raw, keyItem);
-    try {
-      var packed = JSON.parse(new TextDecoder().decode(base64ToBytes(raw)));
-      if (packed && packed.v === 2) {
-        return deriveExchangeKey(keyItem.key, base64ToBytes(packed.s)).then(function (key) {
-          return window.crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(packed.i) }, key, base64ToBytes(packed.d));
-        }).then(function (opened) {
-          return {
-            keyItem: keyItem,
-            payload: JSON.parse(new TextDecoder().decode(new Uint8Array(opened)))
-          };
-        });
-      }
-    } catch (e) {
-      return unpackLegacyExchange(raw, keyItem);
-    }
-    return unpackLegacyExchange(raw, keyItem);
-  }
-
-  function unpackExchange(text) {
-    var own = activeAccessKey();
-    var keys = [];
-    if (own && own.key) keys.push(own);
-    state.accessKeys.forEach(function (item) {
-      if (item.key && (!own || item.id !== own.id)) keys.push(item);
-    });
-    var index = 0;
-    function next() {
-      if (index >= keys.length) return Promise.reject(new Error("no-key"));
-      var keyItem = keys[index];
-      index += 1;
-      return unpackExchangeWithKey(text, keyItem).catch(next);
-    }
-    return next();
-  }
-
-  function exchangeTaskCopy(task, asDone) {
-    ensureTaskSyncId(task);
-    return {
-      syncId: task.syncId,
-      title: task.title,
-      date: task.date,
-      time: task.time,
-      note: task.note,
-      items: task.items || [],
-      tag: task.tag || "",
-      status: asDone ? "done" : "todo",
-      doneAt: asDone ? (task.doneAt || new Date().toISOString()) : "",
-      source: (activeAccessKey() && activeAccessKey().name) || state.storageName,
-      sentAt: new Date().toISOString()
-    };
-  }
-
   function shareTask(task) {
-    if (!requireAccessKey()) return;
-    var keyItem = activeAccessKey();
     state.exchangeTaskId = task.id;
-    var payload = {
-      app: "НА-КОНТРОЛІ",
-      version: 2,
-      type: task.status === "done" ? "done" : "task",
-      task: exchangeTaskCopy(task, task.status === "done")
-    };
-    saveTasks();
-    packExchange(payload, keyItem).then(function (text) {
-      openExchangeModal("send", text);
-      toast("Задачу зашифровано моїм ключем.");
-    }).catch(function () {
-      toast("Задачу не сформовано.");
-    });
+    openExchangeModal("send", "");
   }
 
   function markTaskTransferred() {
@@ -1087,56 +618,8 @@
     toast("Передачу зафіксовано.");
   }
 
-  function mergeIncomingTask(incoming, doneOnly) {
-    if (!incoming || !incoming.syncId || !incoming.title) throw new Error("bad-task");
-    var task = state.tasks.find(function (item) { return item.syncId === incoming.syncId; });
-    if (!task) {
-      task = {
-        id: c.id(),
-        syncId: incoming.syncId,
-        createdAt: new Date().toISOString()
-      };
-      state.tasks.push(task);
-    }
-    if (!doneOnly) {
-      task.title = c.clean(incoming.title);
-      task.date = incoming.date || c.today();
-      task.time = incoming.time || "";
-      task.note = incoming.note || "";
-      task.tag = incoming.tag || "";
-      task.items = Array.isArray(incoming.items) ? incoming.items.map(function (item) {
-        return { id: item.id || c.id(), text: item.text || "", done: !!item.done };
-      }) : [];
-      task.assignee = "";
-      task.status = "todo";
-      task.from = incoming.source || "";
-    }
-    if (doneOnly || incoming.status === "done") {
-      task.status = "done";
-      task.doneAt = incoming.doneAt || new Date().toISOString();
-    }
-    task.updatedAt = new Date().toISOString();
-    return task;
-  }
-
-  function receiveExchange() {
-    if (!requireAnyAccessKey()) return;
-    unpackExchange($("#exchangeText").value).then(function (opened) {
-      var payload = opened.payload;
-      if (!payload || (payload.app !== "НА-КОНТРОЛІ" && payload.app !== OLD_APP_NAME) || !payload.task) throw new Error("bad-payload");
-      var task = mergeIncomingTask(payload.task, payload.type === "done");
-      saveTasks();
-      closeExchangeModal();
-      state.currentTaskId = task.id;
-      showPage("task");
-      toast((payload.type === "done" ? "Позначено виконано" : "Задачу прийнято") + " · " + opened.keyItem.label);
-    }).catch(function () {
-      toast("Задача не відкрилась жодним ключем.");
-    });
-  }
-
   function copyExchangeText() {
-    copyTextFrom("#exchangeText", "Текст задачі скопійовано.");
+    copyTextFrom("#exchangeText", "Бекап скопійовано.");
   }
 
   function filtered(doneOnly) {
@@ -1305,27 +788,19 @@
         '<li>Якщо час задачі минув, а задача не виконана, вона підсвічується як прострочена.</li>' +
         '<li>Сховище видаляється тільки на екрані вибору сховищ, кнопкою поруч із конкретною назвою. Для видалення треба написати "ТАК ВИДАЛИТИ".</li>' +
       '</ol></div>' +
-      '<div class="info-box"><h2>Обмін задачами</h2><ol>' +
-        '<li>У меню зверху відкрийте "Ключі". Там є дві частини: "Мій ключ" і "Книга ключів".</li>' +
-        '<li>"Мій ключ" - це ваш особистий ключ для вихідних задач. Додаток завжди шифрує передачу саме ним, нічого вибирати не треба.</li>' +
-        '<li>Свій ключ можна скопіювати і передати людині, яка має приймати задачі від вас.</li>' +
-        '<li>"Книга ключів" працює як телефонна книга: туди додаються ключі людей або груп, які скинули вам свій ключ.</li>' +
-        '<li>При прийманні задачі додаток спочатку пробує ваш ключ, потім усі ключі з книги. Вам не треба вручну вгадувати, яким ключем закрито задачу.</li>' +
-        '<li>Якщо людина змінила свій ключ, додайте новий ключ у книгу. Старий можна лишити, поки треба відкривати старі задачі.</li>' +
-        '<li>Згенерований ключ довгий випадковий. У сучасному браузері пакети шифруються через WebCrypto AES-GCM з ускладненням підбору ключа PBKDF2.</li>' +
-        '<li>Ключі зберігаються тільки локально в цьому сховищі та шифруються разом з даними пристрою.</li>' +
+      '<div class="info-box"><h2>Передача задач</h2><ol>' +
+        '<li>Передача в цій локальній версії лише фіксує, кому ви передали задачу.</li>' +
+        '<li>Відкрийте задачу і натисніть "Передати".</li>' +
+        '<li>У полі "Кому передано" вкажіть імʼя, позивний або підрозділ.</li>' +
+        '<li>Після натискання "Завершити передачу" задача переходить у розділ "Іншим".</li>' +
+        '<li>У задачі додається виконаний етап "Передано: ...", а в картці показується мітка передачі.</li>' +
+        '<li>Додаток не створює текст для відправлення задач і не приймає задачі ззовні.</li>' +
       '</ol></div>' +
-      '<div class="info-box"><h2>Приклад обміну</h2><ol>' +
-        '<li>ALPHA відкриває "Ключі", генерує "Мій ключ", вводить нік "ALPHA" і скидає цей ключ BRAVO.</li>' +
-        '<li>BRAVO відкриває "Ключі", у "Книзі ключів" натискає "Новий контакт", вводить назву "ALPHA" і вставляє ключ ALPHA.</li>' +
-        '<li>ALPHA створює задачу, у полі доручення пише "BRAVO", відкриває задачу і натискає "Передати".</li>' +
-        '<li>Додаток шифрує задачу ключем ALPHA і формує текст "НА-КОНТРОЛІ:...". Разом із задачею передаються дата, час, примітка, етапи і тег.</li>' +
-        '<li>Після копіювання ALPHA вводить "Кому передано" і натискає "Завершити передачу". У задачі зʼявляється етап "Передано: BRAVO", а задача переходить в "Іншим".</li>' +
-        '<li>BRAVO натискає "Прийняти задачу", вставляє текст, і додаток сам знаходить ключ ALPHA у книзі.</li>' +
-        '<li>Задача додається BRAVO в "Мої" з міткою "Від: ALPHA".</li>' +
-        '<li>Після виконання BRAVO натискає "Зроблено", потім "Передати" і відправляє підтвердження назад уже своїм ключем BRAVO.</li>' +
-        '<li>ALPHA приймає цей пакет, і ця сама задача позначається як "Виконано".</li>' +
-        '<li>Щоб ALPHA міг приймати відповіді BRAVO, BRAVO має скинути ALPHA свій ключ, а ALPHA додає його в книгу ключів.</li>' +
+      '<div class="info-box"><h2>Приклад передачі</h2><ol>' +
+        '<li>ALPHA створює задачу, відкриває її і натискає "Передати".</li>' +
+        '<li>У полі "Кому передано" ALPHA вводить "BRAVO".</li>' +
+        '<li>Після завершення задача має мітку "Передано: BRAVO" і відображається у вкладці "Іншим".</li>' +
+        '<li>Коли BRAVO звітує про виконання, ALPHA відкриває задачу і натискає "Зроблено".</li>' +
       '</ol></div>' +
       '<div class="info-box"><h2>Сповіщення</h2><ol>' +
         '<li>У меню зверху натисніть "Сповіщення" і дозвольте їх у браузері або встановленій PWA.</li>' +
@@ -1349,7 +824,7 @@
       '</ul></div>' +
       '<div class="info-box"><h2>Про автора та додаток</h2>' +
         '<p><strong>НА-КОНТРОЛІ</strong> створено як простий особистий задачник для швидкої фіксації задач, етапів і доручень.</p>' +
-        '<p>Версія: <strong>1.0.5</strong>.</p>' +
+        '<p>Версія: <strong>1.0.6</strong>.</p>' +
         '<p>Автор і власник ідеї: <strong>ShuviDoula</strong>.</p>' +
         '<ul><li>GitHub: github.com/ShuviDoula</li><li>Сайт: використайте GitHub Pages URL цього додатку.</li></ul>' +
       '</div>';
@@ -1733,7 +1208,6 @@
         closeQuickTaskModal();
         closeCreateChoiceModal();
         closeExchangeModal();
-        closeKeysModal();
         closeServiceMenu();
         if (state.page === "task") showPage("tasks");
       }
@@ -1833,32 +1307,7 @@
       if (event.target.id === "exchangePopup") closeExchangeModal();
     });
     $("#copyExchangeBtn").addEventListener("click", copyExchangeText);
-    $("#acceptExchangeBtn").addEventListener("click", receiveExchange);
     $("#finishTransferBtn").addEventListener("click", markTaskTransferred);
-    $("#closeKeysPopup").addEventListener("click", closeKeysModal);
-    $("#keysPopup").addEventListener("click", function (event) {
-      if (event.target.id === "keysPopup") closeKeysModal();
-    });
-    $("#newKeyBtn").addEventListener("click", newKeyForm);
-    $("#accessKeyList").addEventListener("click", function (event) {
-      var button = event.target.closest("[data-action]");
-      var card = event.target.closest("[data-key-id]");
-      if (!button || !card) return;
-      if (button.dataset.action === "toggleKey") selectAccessKey(card.dataset.keyId);
-      if (button.dataset.action === "copyKey") copyKeyCard(card);
-      if (button.dataset.action === "generateOwnKey") generateOwnKey(card);
-      if (button.dataset.action === "saveKey") saveKeyCard(card);
-      if (button.dataset.action === "deleteKey") deleteAccessKey(card.dataset.keyId);
-    });
-    $("#accessKeyList").addEventListener("input", function (event) {
-      var keyInput = event.target.closest('[data-key-field="key"]');
-      var card = event.target.closest("[data-key-id]");
-      if (!keyInput || !card) return;
-      var item = state.accessKeys.find(function (key) { return key.id === card.dataset.keyId; });
-      if (!item || item.kind !== "own") return;
-      var generate = card.querySelector('[data-action="generateOwnKey"]');
-      if (generate) generate.disabled = !!c.clean(keyInput.value);
-    });
     $("#tasksPage").addEventListener("click", handleTaskAction);
     $("#taskPage").addEventListener("click", handleTaskAction);
     $("#taskPage").addEventListener("change", handleTaskAction);
@@ -1910,12 +1359,6 @@
 
     $("#doneMenuBtn").addEventListener("click", function () { closeServiceMenu(); showPage("done"); });
     $("#notifyBtn").addEventListener("click", enableNotifications);
-    $("#keysBtn").addEventListener("click", openKeysModal);
-    $("#receivePacketBtn").addEventListener("click", function () {
-      closeServiceMenu();
-      if (!requireAccessKey()) return;
-      openExchangeModal("receive", "");
-    });
     if ($("#installBtn")) $("#installBtn").addEventListener("click", function () { closeServiceMenu(); install(); });
     $("#exportBtn").addEventListener("click", function () { closeServiceMenu(); exportData(); });
     $("#importBtn").addEventListener("click", function () { closeServiceMenu(); $("#importFile").click(); });

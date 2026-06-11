@@ -1,6 +1,6 @@
 {
   "name": "na-kontroli",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "НА-КОНТРОЛІ: Framework7 PWA задачник з локальним сховищем для GitHub Pages.",
   "private": true,
   "main": "src/js/app.js",

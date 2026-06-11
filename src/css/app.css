@@ -845,17 +845,6 @@ a {
   gap: 12px;
 }
 
-.key-primary-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: end;
-}
-
-.key-primary-actions .button {
-  min-height: 46px;
-}
-
 .form-grid,
 .form-actions {
   display: grid;
@@ -874,98 +863,6 @@ a {
   background: var(--bd-white);
 }
 
-.key-actions {
-  grid-template-columns: 1fr;
-}
-
-.key-list {
-  display: grid;
-  gap: 8px;
-}
-
-.key-card {
-  min-width: 0;
-  border: 1px solid var(--bd-line);
-  border-radius: 8px;
-  background: var(--bd-white);
-  overflow: hidden;
-}
-
-.key-card-title {
-  width: 100%;
-  border: 0;
-  background: var(--bd-white);
-  color: var(--bd-ink);
-  padding: 12px;
-  text-align: left;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
-  gap: 8px;
-  align-items: center;
-}
-
-.own-key-card .key-card-title {
-  background: var(--bd-soft);
-}
-
-.key-card-copy,
-.key-card-copy strong,
-.key-card-copy span {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.key-card-copy span {
-  color: var(--bd-muted);
-  font-size: 13px;
-  margin-top: 2px;
-}
-
-.key-card-state {
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--bd-line);
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  color: var(--bd-olive);
-  font-size: 20px;
-  font-weight: 900;
-}
-
-.key-card-body {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border-top: 1px solid var(--bd-line);
-}
-
-.key-card-actions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.contact-actions {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.key-section-title {
-  color: var(--bd-muted);
-  font-size: 13px;
-  font-weight: 850;
-  padding: 6px 2px 0;
-  text-transform: uppercase;
-}
-
-.key-card .button[disabled] {
-  opacity: .45;
-  pointer-events: none;
-}
-
 .transfer-complete {
   display: none;
   gap: 8px;
@@ -973,12 +870,6 @@ a {
   border-radius: 8px;
   background: var(--bd-soft);
   padding: 12px;
-}
-
-@media (min-width: 520px) {
-  .key-actions {
-    grid-template-columns: 1fr;
-  }
 }
 
 .delegate-box {
@@ -1133,12 +1024,6 @@ a {
 
   .top-stats {
     gap: 4px;
-  }
-
-  .key-primary-actions,
-  .key-card-actions,
-  .contact-actions {
-    grid-template-columns: 1fr;
   }
 
   .stat {
