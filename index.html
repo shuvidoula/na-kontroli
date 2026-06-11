@@ -98,17 +98,17 @@
           <button id="closeTaskPopup" class="icon-button" type="button" aria-label="Закрити">x</button>
         </div>
         <div class="popup-content">
-          <form id="taskForm" class="task-form">
+          <form id="taskForm" class="task-form" autocomplete="off">
             <input id="taskId" type="hidden">
             <label class="field-label">Задача
-              <input id="taskTitle" type="text" required maxlength="140" placeholder="Що зробити">
+              <input id="taskTitle" type="text" required maxlength="140" autocomplete="off" placeholder="Що зробити">
             </label>
             <div class="form-grid">
               <label class="field-label">Дата
-                <input id="taskDate" type="date" required>
+                <input id="taskDate" type="date" required autocomplete="off">
               </label>
               <label class="field-label">Час
-                <input id="taskTime" type="time">
+                <input id="taskTime" type="time" autocomplete="off">
               </label>
             </div>
             <label class="field-label">Тег
@@ -123,19 +123,19 @@
             <details class="delegate-box">
               <summary>Доручити задачу підлеглому</summary>
               <label class="field-label">Кому доручена задача
-                <input id="taskAssignee" type="text" maxlength="80" placeholder="Ім'я / підрозділ">
+                <input id="taskAssignee" type="text" maxlength="80" autocomplete="off" placeholder="Ім'я / підрозділ">
               </label>
             </details>
             <label class="field-label">Примітка
-              <textarea id="taskNote" maxlength="900" placeholder="Коротко"></textarea>
+              <textarea id="taskNote" maxlength="900" autocomplete="off" placeholder="Коротко"></textarea>
             </label>
             <label class="field-label">Етапи
-              <textarea id="taskItems" class="hidden-stage-textarea" placeholder="Кожен етап з нового рядка"></textarea>
+              <textarea id="taskItems" class="hidden-stage-textarea" autocomplete="off" placeholder="Кожен етап з нового рядка"></textarea>
             </label>
             <div class="stage-editor-wrap">
               <div id="taskStageEditor" class="stage-editor"></div>
               <div class="add-stage edit-stage-add">
-                <input id="taskStageDraft" type="text" placeholder="Додати етап">
+                <input id="taskStageDraft" type="text" autocomplete="off" placeholder="Додати етап">
                 <button id="addFormStage" class="button button-outline" type="button">+</button>
               </div>
             </div>
@@ -168,12 +168,12 @@
           <button id="closeQuickTaskPopup" class="icon-button" type="button" aria-label="Закрити">x</button>
         </div>
         <div class="popup-content">
-          <form id="quickTaskForm" class="task-form">
+          <form id="quickTaskForm" class="task-form" autocomplete="off">
             <label class="field-label">Дата
-              <input id="quickTaskDate" type="date" required>
+              <input id="quickTaskDate" type="date" required autocomplete="off">
             </label>
             <label class="field-label">Один рядок
-              <input id="quickTaskLine" type="text" maxlength="240" placeholder="14:30 перевірити звʼязок. коротка примітка">
+              <input id="quickTaskLine" type="text" maxlength="240" autocomplete="off" autocapitalize="sentences" spellcheck="true" placeholder="14:30 перевірити звʼязок. коротка примітка">
             </label>
             <div class="quick-tags" role="group" aria-label="Тег задачі">
               <button class="quick-tag personal" type="button" data-quick-tag="personal">О</button>
@@ -183,7 +183,7 @@
             </div>
             <div class="tag-help">О - особисте, К - на контролі, Т - терміново</div>
             <label class="field-label">Примітка
-              <textarea id="quickTaskNote" maxlength="1600" placeholder="Вставте повний текст повідомлення або деталі задачі"></textarea>
+              <textarea id="quickTaskNote" maxlength="1600" autocomplete="off" autocapitalize="sentences" spellcheck="true" placeholder="Вставте повний текст повідомлення або деталі задачі"></textarea>
             </label>
           </form>
         </div>
@@ -206,7 +206,7 @@
           </label>
           <div id="transferCompleteBox" class="transfer-complete">
             <label class="field-label">Кому передано
-              <input id="transferRecipientInput" type="text" maxlength="80" placeholder="Ім'я / підрозділ">
+              <input id="transferRecipientInput" type="text" maxlength="80" autocomplete="off" placeholder="Ім'я / підрозділ">
             </label>
             <button id="finishTransferBtn" class="button button-outline" type="button">Завершити передачу</button>
           </div>
