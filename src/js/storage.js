@@ -47,20 +47,47 @@
 
   function createUser(users, callsign, code) {
     var salt = c.id();
-    var user = {
-      id: c.id(),
-      salt: salt,
-      callsign: callsign,
-      callsignHash: c.hash(callsign.toLowerCase()),
-      pinHash: c.hash(salt + callsign.toLowerCase() + code)
-    };
-    users.push(user);
-    saveUsers(users);
-    return user;
+    return c.pinHashStrong(salt, callsign, code).then(function (pinHash2) {
+      var user = {
+        id: c.id(),
+        salt: salt,
+        callsign: callsign,
+        callsignHash: c.hash(callsign.toLowerCase()),
+        pinHash: c.hash(salt + callsign.toLowerCase() + code),
+        pinHash2: pinHash2,
+        keyVersion: 2
+      };
+      users.push(user);
+      saveUsers(users);
+      return user;
+    });
   }
 
   function dataKey(user, code) {
+    if (user && user.keyVersion >= 2) return LEGACY_PREFIX + ":v2:" + user.callsign.toLowerCase() + ":" + code + ":" + user.salt;
     return c.hash(LEGACY_PREFIX + ":" + user.callsign.toLowerCase() + ":" + code + ":" + user.salt);
+  }
+
+  function verifyPin(user, code) {
+    if (user.pinHash2) {
+      if (String(user.pinHash2).indexOf("NKPH1:") === 0) {
+        return Promise.resolve(user.pinHash2 === "NKPH1:" + c.hash(user.salt + ":" + user.callsign.toLowerCase() + ":" + code));
+      }
+      return c.pinHashStrong(user.salt, user.callsign, code).then(function (value) {
+        return value === user.pinHash2;
+      });
+    }
+    return Promise.resolve(c.hash(user.salt + user.callsign.toLowerCase() + code) === user.pinHash);
+  }
+
+  function upgradeUserSecurity(users, user, code) {
+    if (!user || (user.keyVersion >= 2 && String(user.pinHash2 || "").indexOf("NKPH1:") !== 0)) return Promise.resolve(user);
+    return c.pinHashStrong(user.salt, user.callsign, code).then(function (pinHash2) {
+      user.pinHash2 = pinHash2;
+      user.keyVersion = 2;
+      saveUsers(users);
+      return user;
+    });
   }
 
   function dataStoreKey(user) {
@@ -74,24 +101,27 @@
   function loadTasks(user, key) {
     var raw = user ? (localStorage.getItem(dataStoreKey(user)) || localStorage.getItem(oldDataStoreKey(user))) : "";
     if (!raw && user && user.legacy) raw = localStorage.getItem(OLD_DATA_KEY);
-    if (!raw) return { ok: true, tasks: [] };
-    try {
-      var parsed = JSON.parse(c.openSeal(raw, key));
-      return { ok: true, tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [] };
-    } catch (e) {
+    if (!raw) return Promise.resolve({ ok: true, tasks: [] });
+    return c.openStrong(raw, key).then(function (opened) {
+      var parsed = JSON.parse(opened);
+      return { ok: true, tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [], upgraded: String(raw).indexOf("NK2:") !== 0 };
+    }).catch(function () {
       return { ok: false, tasks: [] };
-    }
+    });
   }
 
   function saveTasks(user, key, tasks) {
-    if (!user) return;
-    localStorage.setItem(dataStoreKey(user), c.seal(JSON.stringify({
+    if (!user) return Promise.resolve(false);
+    return c.sealStrong(JSON.stringify({
       version: 5,
       userId: user.id,
       tasks: tasks,
       savedAt: new Date().toISOString()
-    }), key));
-    localStorage.removeItem(oldDataStoreKey(user));
+    }), key).then(function (sealed) {
+      localStorage.setItem(dataStoreKey(user), sealed);
+      localStorage.removeItem(oldDataStoreKey(user));
+      return true;
+    });
   }
 
   function deleteUser(users, userId) {
@@ -114,6 +144,8 @@
     migrateOldUser: migrateOldUser,
     createUser: createUser,
     dataKey: dataKey,
+    verifyPin: verifyPin,
+    upgradeUserSecurity: upgradeUserSecurity,
     loadTasks: loadTasks,
     saveTasks: saveTasks,
     deleteUser: deleteUser

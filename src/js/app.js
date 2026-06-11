@@ -12,6 +12,7 @@
     iosTranslucentModals: false
   });
   var REMINDER_INTERVAL = 15 * 60 * 1000;
+  var APP_SHARE_URL = "https://shuvidoula.github.io/na-kontroli/";
   var state = {
     pin: "",
     users: store.migrateOldUser(store.loadUsers()),
@@ -32,6 +33,7 @@
     formStages: [],
     dragStageId: "",
     notified: {},
+    settings: {},
     reminderTimer: 0,
     exchangeTaskId: "",
     installPrompt: null
@@ -135,11 +137,39 @@
     return "na_kontroli_notified_" + (state.userId || "none");
   }
 
+  function settingsKey() {
+    return "na_kontroli_settings_" + (state.userId || "none");
+  }
+
+  function defaultSettings() {
+    return {
+      notifyHour: true,
+      notifyAtTime: true,
+      backupReminder: true
+    };
+  }
+
   function loadNotified() {
     try {
       state.notified = JSON.parse(localStorage.getItem(notifyKey()) || "{}");
     } catch (e) {
       state.notified = {};
+    }
+  }
+
+  function loadSettings() {
+    try {
+      state.settings = Object.assign(defaultSettings(), JSON.parse(localStorage.getItem(settingsKey()) || "{}"));
+    } catch (e) {
+      state.settings = defaultSettings();
+    }
+  }
+
+  function saveSettings() {
+    try {
+      localStorage.setItem(settingsKey(), JSON.stringify(state.settings));
+    } catch (e) {
+      state.settings = defaultSettings();
     }
   }
 
@@ -152,7 +182,7 @@
   }
 
   function updateNotifyButton() {
-    var button = $("#notifyBtn");
+    var button = document.querySelector("[data-settings-action='enableNotifications']");
     if (!button) return;
     if (!notificationSupported()) {
       button.textContent = "Сповіщення: недоступні";
@@ -225,9 +255,10 @@
       var due = taskDueDate(task);
       if (!due) return;
       [
-        { kind: "hour", at: due.getTime() - 60 * 60 * 1000 },
-        { kind: "time", at: due.getTime() }
+        { kind: "hour", at: due.getTime() - 60 * 60 * 1000, enabled: state.settings.notifyHour !== false },
+        { kind: "time", at: due.getTime(), enabled: state.settings.notifyAtTime !== false }
       ].forEach(function (item) {
+        if (!item.enabled) return;
         var id = reminderId(task, item.kind);
         if (state.notified[id]) return;
         if (now >= item.at && now <= item.at + grace) sendNotification(task, item.kind);
@@ -275,6 +306,7 @@
   }
 
   function label(status) {
+    if (status === "archived") return "Архів";
     if (status === "run") return "Іншим";
     if (status === "done") return "Виконано";
     return "Моя";
@@ -368,6 +400,7 @@
     state.storageName = "";
     state.currentTaskId = "";
     state.notified = {};
+    state.settings = {};
     clearInterval(state.reminderTimer);
     if (!state.users.length) {
       state.userId = "";
@@ -535,17 +568,26 @@
         toast("PIN не співпав.");
         return;
       }
-      user = store.createUser(state.users, state.pendingStorageName, state.pin);
-      state.userId = user.id;
-      state.key = store.dataKey(user, state.pin);
-      state.storageName = user.callsign;
-      state.tasks = [];
-      store.saveTasks(user, state.key, state.tasks);
-      state.pendingStorageName = "";
-      state.pendingPin = "";
-      state.pinMismatch = false;
-      unlock();
-      toast("Сховище створено.");
+      store.createUser(state.users, state.pendingStorageName, state.pin).then(function (created) {
+        user = created;
+        state.userId = user.id;
+        state.key = store.dataKey(user, state.pin);
+        state.storageName = user.callsign;
+        state.tasks = [];
+        store.saveTasks(user, state.key, state.tasks).catch(function () {
+          toast("Сховище створено, але дані не збережено.");
+        });
+        loadSettings();
+        state.pendingStorageName = "";
+        state.pendingPin = "";
+        state.pinMismatch = false;
+        unlock();
+        toast("Сховище створено.");
+      }).catch(function () {
+        state.pin = "";
+        renderLogin();
+        toast("Сховище не створено.");
+      });
       return;
     }
 
@@ -556,25 +598,46 @@
       return;
     }
 
-    if (c.hash(user.salt + user.callsign.toLowerCase() + state.pin) !== user.pinHash) {
-      state.pin = "";
-      renderLogin();
-      toast("Невірний PIN.");
-      return;
-    }
-
-    state.key = store.dataKey(user, state.pin);
-    state.storageName = user.callsign;
-    var loaded = store.loadTasks(user, state.key);
-    if (!loaded.ok) {
+    var enteredPin = state.pin;
+    store.verifyPin(user, enteredPin).then(function (valid) {
+      if (!valid) {
+        state.pin = "";
+        renderLogin();
+        toast("Невірний PIN.");
+        return Promise.reject(new Error("bad-pin"));
+      }
+      state.key = store.dataKey(user, enteredPin);
+      state.storageName = user.callsign;
+      return store.loadTasks(user, state.key);
+    }).then(function (loaded) {
+      if (!loaded.ok) {
+        state.pin = "";
+        renderLogin();
+        toast("Дані не відкрились. Перевірте PIN.");
+        return;
+      }
+      state.tasks = loaded.tasks.map(normalizeTask);
+      loadNotified();
+      loadSettings();
+      if (user.keyVersion >= 2 && String(user.pinHash2 || "").indexOf("NKPH1:") !== 0) {
+        unlock();
+        if (loaded.upgraded) saveTasks();
+        return;
+      }
+      store.upgradeUserSecurity(state.users, user, enteredPin).then(function () {
+        state.key = store.dataKey(user, enteredPin);
+        unlock();
+        saveTasks();
+      }).catch(function () {
+        unlock();
+        if (loaded.upgraded) saveTasks();
+      });
+    }).catch(function (error) {
+      if (error && error.message === "bad-pin") return;
       state.pin = "";
       renderLogin();
       toast("Дані не відкрились. Перевірте PIN.");
-      return;
-    }
-    state.tasks = loaded.tasks;
-    loadNotified();
-    unlock();
+    });
   }
 
   function unlock() {
@@ -583,9 +646,26 @@
   }
 
   function saveTasks() {
-    store.saveTasks(selectedUser(), state.key, state.tasks);
+    store.saveTasks(selectedUser(), state.key, state.tasks).catch(function () {
+      toast("Не вдалося зберегти дані.");
+    });
     clearOldReminderMarks();
     checkReminders();
+  }
+
+  function normalizeTask(task) {
+    task.id = task.id || c.id();
+    task.syncId = task.syncId || c.id();
+    task.status = task.status || "todo";
+    task.items = Array.isArray(task.items) ? task.items : [];
+    task.createdAt = task.createdAt || new Date().toISOString();
+    task.updatedAt = task.updatedAt || task.createdAt;
+    return task;
+  }
+
+  function ensureTaskSyncId(task) {
+    if (!task.syncId) task.syncId = c.id();
+    return task.syncId;
   }
 
   function shareTask(task) {
@@ -628,10 +708,11 @@
       if (doneOnly) {
         if (task.status !== "done") return false;
       } else {
-        if (task.status === "done") return false;
+        if (task.status === "done" || task.status === "archived") return false;
         if (state.filter === "mine" && task.status !== "todo") return false;
         if (state.filter === "delegated" && task.status !== "run") return false;
         if (state.filter === "today" && task.date !== c.today()) return false;
+        if (state.filter === "overdue" && !isOverdue(task)) return false;
         if (state.tagFilter !== "all" && task.tag !== state.tagFilter) return false;
       }
       if (q) {
@@ -669,7 +750,17 @@
 
   function renderTasksPage() {
     var list = filtered(false);
-    $("#tasksPage").innerHTML = tagFilterHtml() +
+    var active = state.tasks.filter(function (task) { return task.status !== "done" && task.status !== "archived"; });
+    var todayCount = active.filter(function (task) { return task.date === c.today(); }).length;
+    var overdueCount = active.filter(isOverdue).length;
+    var delegatedCount = active.filter(function (task) { return task.status === "run"; }).length;
+    $("#tasksPage").innerHTML =
+      '<div class="top-stats">' +
+        '<button class="stat" type="button" data-action="quickFilter" data-filter="today"><b>' + todayCount + '</b><span>Сьогодні</span></button>' +
+        '<button class="stat" type="button" data-action="quickFilter" data-filter="overdue"><b>' + overdueCount + '</b><span>Прострочено</span></button>' +
+        '<button class="stat" type="button" data-action="quickFilter" data-filter="delegated"><b>' + delegatedCount + '</b><span>Іншим</span></button>' +
+      '</div>' +
+      tagFilterHtml() +
       '<div class="search-wrap"><input id="searchInput" type="search" placeholder="Пошук" value="' + c.escapeHtml(state.query) + '"></div>' +
       '<div class="task-list">' + (list.length ? list.map(taskCard).join("") : '<div class="empty-state">Тут поки чисто.</div>') + '</div>';
   }
@@ -733,6 +824,21 @@
       $("#taskPage").innerHTML = '<div class="empty-state">Задачу не знайдено.</div>';
       return;
     }
+    if (task.status === "archived") {
+      $("#taskPage").innerHTML =
+        '<div class="detail-top"><button class="button button-outline" type="button" data-action="backArchive">Назад</button></div>' +
+        '<article class="detail-card">' +
+          '<div class="detail-title">' + c.escapeHtml(task.title) + '</div>' +
+          '<div class="meta"><span class="pill">Архів</span><span class="pill">' + c.escapeHtml(formatDate(task.date)) + (task.time ? " " + c.escapeHtml(task.time) : "") + '</span></div>' +
+          (task.note ? '<p>' + c.escapeHtml(task.note) + '</p>' : '<small>Без примітки.</small>') +
+          '<div class="detail-actions">' +
+            '<button class="button button-outline" type="button" data-action="restoreTask">Повернути</button>' +
+            '<button class="button button-fill color-red danger-action" type="button" data-action="deleteForeverTask">Видалити</button>' +
+          '</div>' +
+        '</article>' +
+        '<article class="detail-card">' + stageRows(task) + '</article>';
+      return;
+    }
     var meta = tagMeta(task.tag);
     var overdue = isOverdue(task);
     $("#taskPage").innerHTML =
@@ -752,7 +858,7 @@
             '<button class="button button-outline" type="button" data-action="notDoneTask">Повернутись до виконання</button>' :
             '<button class="button button-fill" type="button" data-action="doneTask">Зроблено</button>') +
           '<button class="button button-outline" type="button" data-action="shareTask">Передати</button>' +
-          '<button class="button button-fill color-red danger-action" type="button" data-action="deleteTask">Видалити</button>' +
+          '<button class="button button-fill color-red danger-action" type="button" data-action="archiveTask">В архів</button>' +
         '</div>' +
       '</article>' +
       '<article class="detail-card">' + stageRows(task) + '</article>';
@@ -763,6 +869,7 @@
       '<div class="info-box"><h2>Встановлення</h2><ol>' +
         '<li>НА-КОНТРОЛІ - це PWA. Простими словами: сайт, який можна поставити на екран телефону як звичайний додаток.</li>' +
         '<li>Відкрийте посилання GitHub Pages саме у Safari на iPhone або Chrome на Android. Через переглядач файлів чи вбудований браузер месенджера встановлення може не зʼявитись.</li>' +
+        '<li>Посиланням на додаток можна поділитися з розділу "Налаштування" кнопкою "Поділитись".</li>' +
         '<li>iPhone: натисніть кнопку "Поділитися" у Safari, прокрутіть список дій і виберіть "На екран Домівки". Потім натисніть "Додати".</li>' +
         '<li>Android: відкрийте меню Chrome з трьома крапками і виберіть "Встановити додаток" або "Додати на головний екран".</li>' +
         '<li>Після встановлення запускайте додаток з іконки "НК" на екрані. Так він виглядає як окрема програма без адресного рядка.</li>' +
@@ -796,14 +903,8 @@
         '<li>У задачі додається виконаний етап "Передано: ...", а в картці показується мітка передачі.</li>' +
         '<li>Додаток не створює текст для відправлення задач і не приймає задачі ззовні.</li>' +
       '</ol></div>' +
-      '<div class="info-box"><h2>Приклад передачі</h2><ol>' +
-        '<li>ALPHA створює задачу, відкриває її і натискає "Передати".</li>' +
-        '<li>У полі "Кому передано" ALPHA вводить "BRAVO".</li>' +
-        '<li>Після завершення задача має мітку "Передано: BRAVO" і відображається у вкладці "Іншим".</li>' +
-        '<li>Коли BRAVO звітує про виконання, ALPHA відкриває задачу і натискає "Зроблено".</li>' +
-      '</ol></div>' +
       '<div class="info-box"><h2>Сповіщення</h2><ol>' +
-        '<li>У меню зверху натисніть "Сповіщення" і дозвольте їх у браузері або встановленій PWA.</li>' +
+        '<li>У "Налаштуваннях" натисніть "Сповіщення" і дозвольте їх у браузері або встановленій PWA.</li>' +
         '<li>Якщо в задачі вказано дату і час, застосунок готує два нагадування: за 1 годину до часу задачі та в сам час задачі.</li>' +
         '<li>Для економії батареї перевірка виконується приблизно раз на 15 хвилин, а також одразу після відкриття застосунку або зміни задачі.</li>' +
         '<li>Нагадування працюють локально на пристрої, без сервера і без інтернету після кешування.</li>' +
@@ -824,10 +925,179 @@
       '</ul></div>' +
       '<div class="info-box"><h2>Про автора та додаток</h2>' +
         '<p><strong>НА-КОНТРОЛІ</strong> створено як простий особистий задачник для швидкої фіксації задач, етапів і доручень.</p>' +
-        '<p>Версія: <strong>1.0.6</strong>.</p>' +
+        '<div class="version-row"><p>Версія: <strong>1.1.0</strong>.</p><button class="button button-outline" type="button" data-action="openUpdates">Що нового</button></div>' +
         '<p>Автор і власник ідеї: <strong>ShuviDoula</strong>.</p>' +
-        '<ul><li>GitHub: github.com/ShuviDoula</li><li>Сайт: використайте GitHub Pages URL цього додатку.</li></ul>' +
+        '<ul><li>GitHub: github.com/ShuviDoula</li><li>Сайт: ' + APP_SHARE_URL + '</li></ul>' +
       '</div>';
+  }
+
+  function updateItems(items) {
+    return '<ul>' + items.map(function (item) {
+      return '<li>' + c.escapeHtml(item) + '</li>';
+    }).join("") + '</ul>';
+  }
+
+  function renderUpdatesPage() {
+    var updates = [
+      {
+        version: "1.1.0",
+        title: "Налаштування, архів і посилене сховище",
+        items: [
+          "Додано сторінку Налаштування.",
+          "Додано архів задач з поверненням і остаточним видаленням.",
+          "Додано очищення всього архіву з налаштувань.",
+          "Додано лічильники Сьогодні, Прострочено та Іншим.",
+          "Додано налаштування сповіщень за 1 годину і в час задачі.",
+          "Локальне сховище переходить на сильніше шифрування WebCrypto AES-GCM."
+        ]
+      },
+      {
+        version: "1.0.8",
+        title: "Сторінка змін",
+        items: [
+          "Додано сторінку Що нового.",
+          "У довіднику біля версії зʼявився швидкий перехід до історії оновлень."
+        ]
+      },
+      {
+        version: "1.0.7",
+        title: "Поширення додатку",
+        items: [
+          "Додано кнопку Поділитись у верхньому меню.",
+          "Посилання на додаток відкривається через системне меню або копіюється в буфер.",
+          "Прибрано зайвий блок Приклад передачі з довідника."
+        ]
+      },
+      {
+        version: "1.0.6",
+        title: "Локальна версія",
+        items: [
+          "Прибрано обмін задачами між пристроями.",
+          "Прибрано службові екрани обміну і приймання задач.",
+          "Передача задачі тепер тільки фіксує, кому її передано.",
+          "Довідник і README переписано під локальне використання."
+        ]
+      },
+      {
+        version: "1.0.5",
+        title: "Вхід і створення сховища",
+        items: [
+          "Додано індикатор введених цифр PIN.",
+          "Створення сховища розділено на кроки: назва, PIN, повтор PIN.",
+          "Якщо повтор PIN не співпав, можна створити PIN заново або скасувати створення."
+        ]
+      },
+      {
+        version: "1.0.4",
+        title: "Швидка і повна задача",
+        items: [
+          "Кнопка плюс відкриває вибір між швидкою та повною задачею.",
+          "Швидка задача винесена в окреме вікно.",
+          "Швидкий рядок підтримує час у форматах 14:30, 14 і 14 30.",
+          "Дати в картках і деталях показуються як день.місяць.рік."
+        ]
+      },
+      {
+        version: "1.0.3",
+        title: "Передача і контакти",
+        items: [
+          "Перероблено екран передачі задач.",
+          "Додано окремі поля для фіксації отримувача задачі."
+        ]
+      },
+      {
+        version: "1.0.2",
+        title: "Прострочення і бекапи",
+        items: [
+          "Додано швидкий ввід задачі.",
+          "Додано червоне виділення прострочених задач.",
+          "Додано явну мітку, кому і коли передано задачу.",
+          "Бекап додатково відкриває екран з JSON, якщо телефон не зберіг файл.",
+          "Імпорт отримав режими Додати і Замінити."
+        ]
+      },
+      {
+        version: "1.0.1",
+        title: "Безпечніше видалення",
+        items: [
+          "Прибрано небезпечну кнопку глобального видалення всіх даних.",
+          "Додано видалення конкретного сховища на екрані вибору сховищ.",
+          "Покращено створення бекапу на телефонах."
+        ]
+      },
+      {
+        version: "1.0.0",
+        title: "Перший реліз НА-КОНТРОЛІ",
+        items: [
+          "Додано локальні сховища з PIN.",
+          "Додано задачі з датою, часом, етапами, тегами і дорученням.",
+          "Додано фільтри Особисте, На контролі, Терміново і Всі.",
+          "Додано локальні сповіщення та експорт/імпорт резервних копій."
+        ]
+      }
+    ];
+    $("#updatesPage").innerHTML =
+      '<div class="detail-top"><button class="button button-outline" type="button" data-action="backGuide">Назад</button><h2>Що нового</h2></div>' +
+      '<div class="updates-list">' + updates.map(function (item) {
+        return '<article class="update-card">' +
+          '<div class="update-head"><span>Версія ' + c.escapeHtml(item.version) + '</span><strong>' + c.escapeHtml(item.title) + '</strong></div>' +
+          updateItems(item.items) +
+        '</article>';
+      }).join("") + '</div>';
+  }
+
+  function archivedTasks() {
+    return state.tasks.filter(function (task) { return task.status === "archived"; }).sort(function (a, b) {
+      return String(b.archivedAt || b.updatedAt || "").localeCompare(String(a.archivedAt || a.updatedAt || ""));
+    });
+  }
+
+  function renderSettingsPage() {
+    var archivedCount = archivedTasks().length;
+    $("#settingsPage").innerHTML =
+      '<div class="detail-top"><button class="button button-outline" type="button" data-settings-action="backTasks">Назад</button><h2>Налаштування</h2></div>' +
+      '<article class="detail-card settings-card">' +
+        '<h3>Сповіщення</h3>' +
+        '<label class="setting-row"><span>За 1 годину до задачі</span><input type="checkbox" data-setting="notifyHour"' + (state.settings.notifyHour !== false ? " checked" : "") + '></label>' +
+        '<label class="setting-row"><span>У час задачі</span><input type="checkbox" data-setting="notifyAtTime"' + (state.settings.notifyAtTime !== false ? " checked" : "") + '></label>' +
+        '<button class="button button-outline" type="button" data-settings-action="enableNotifications">Сповіщення</button>' +
+      '</article>' +
+      '<article class="detail-card settings-card">' +
+        '<h3>Дані</h3>' +
+        '<button class="button button-outline" type="button" data-settings-action="exportData">Бекап</button>' +
+        '<button class="button button-outline" type="button" data-settings-action="importData">Імпорт</button>' +
+        '<button class="button button-outline" type="button" data-settings-action="openArchive">Архів (' + archivedCount + ')</button>' +
+        '<button class="button button-outline danger-link" type="button" data-settings-action="clearArchive"' + (archivedCount ? "" : " disabled") + '>Очистити архів</button>' +
+      '</article>' +
+      '<article class="detail-card settings-card">' +
+        '<h3>Додаток</h3>' +
+        '<button class="button button-outline" type="button" data-settings-action="shareApp">Поділитись</button>' +
+        '<button class="button button-outline" type="button" data-settings-action="installApp">Встановити</button>' +
+        '<button class="button button-outline" type="button" data-settings-action="openUpdates">Що нового</button>' +
+      '</article>';
+    updateNotifyButton();
+  }
+
+  function archiveCard(task) {
+    return '<article class="task-card archived" data-task="' + task.id + '">' +
+      '<div class="task-main">' +
+        '<div><div class="task-title">' + c.escapeHtml(task.title) + '</div>' +
+        '<div class="meta"><span class="pill">Архів</span><span class="pill">' + c.escapeHtml(formatDate(task.date)) + (task.time ? " " + c.escapeHtml(task.time) : "") + '</span>' +
+        (task.assignee ? '<span class="pill">' + c.escapeHtml(task.assignee) + '</span>' : '') + '</div></div>' +
+        '<button class="button button-outline open-task" type="button" data-action="view">></button>' +
+      '</div>' +
+      '<div class="archive-actions">' +
+        '<button class="button button-outline" type="button" data-archive-action="restore">Повернути</button>' +
+        '<button class="button button-fill color-red danger-action" type="button" data-archive-action="deleteForever">Видалити</button>' +
+      '</div>' +
+    '</article>';
+  }
+
+  function renderArchivePage() {
+    var list = archivedTasks();
+    $("#archivePage").innerHTML =
+      '<div class="detail-top"><button class="button button-outline" type="button" data-archive-action="backSettings">Назад</button><h2>Архів</h2></div>' +
+      '<div class="task-list">' + (list.length ? list.map(archiveCard).join("") : '<div class="empty-state">Архів порожній.</div>') + '</div>';
   }
 
   function renderNav() {
@@ -847,6 +1117,9 @@
     renderDonePage();
     renderTaskPage();
     renderGuidePage();
+    renderUpdatesPage();
+    renderSettingsPage();
+    renderArchivePage();
     renderNav();
   }
 
@@ -856,6 +1129,9 @@
     $("#taskPage").hidden = page !== "task";
     $("#donePage").hidden = page !== "done";
     $("#guidePage").hidden = page !== "guide";
+    $("#updatesPage").hidden = page !== "updates";
+    $("#settingsPage").hidden = page !== "settings";
+    $("#archivePage").hidden = page !== "archive";
     render();
   }
 
@@ -969,9 +1245,12 @@
 
   function handleTaskAction(event) {
     var target = event.target.closest("[data-action]");
-    var task = taskFromEvent(event) || state.tasks.find(function (item) { return item.id === state.currentTaskId; });
-    if (!target || !task) return;
+    if (!target) return;
     var action = target.dataset.action;
+    var taskActions = ["view", "editTask", "shareTask", "backTasks", "backArchive", "restoreTask", "deleteForeverTask", "doneTask", "notDoneTask", "archiveTask", "checkStage", "removeStage", "addStage"];
+    if (taskActions.indexOf(action) === -1) return;
+    var task = taskFromEvent(event) || state.tasks.find(function (item) { return item.id === state.currentTaskId; });
+    if (!task && action !== "backTasks" && action !== "backArchive") return;
 
     if (action === "view") {
       clearToast();
@@ -982,6 +1261,15 @@
     if (action === "editTask") return openTaskForm(task);
     if (action === "shareTask") return shareTask(task);
     if (action === "backTasks") return showPage("tasks");
+    if (action === "backArchive") return showPage("archive");
+    if (action === "restoreTask") {
+      restoreTask(task);
+      return;
+    }
+    if (action === "deleteForeverTask") {
+      deleteTaskForever(task);
+      return;
+    }
     if (action === "doneTask") {
       task.status = "done";
       task.doneAt = new Date().toISOString();
@@ -990,13 +1278,16 @@
       task.status = task.assignee ? "run" : "todo";
       task.doneAt = "";
     }
-    if (action === "deleteTask") {
-      f7.dialog.confirm("Видалити задачу?", "НА-КОНТРОЛІ", function () {
-        state.tasks = state.tasks.filter(function (item) { return item.id !== task.id; });
-        state.currentTaskId = "";
+    if (action === "archiveTask") {
+      f7.dialog.confirm("Перемістити задачу в архів?", "НА-КОНТРОЛІ", function () {
+        task.previousStatus = task.status === "archived" ? (task.previousStatus || "todo") : task.status;
+        task.status = "archived";
+        task.archivedAt = new Date().toISOString();
+        task.updatedAt = task.archivedAt;
         saveTasks();
+        state.currentTaskId = "";
         showPage("tasks");
-        toast("Видалено.");
+        toast("Переміщено в архів.");
       });
       return;
     }
@@ -1017,6 +1308,39 @@
     task.updatedAt = new Date().toISOString();
     saveTasks();
     render();
+  }
+
+  function restoreTask(task) {
+    task.status = task.previousStatus && task.previousStatus !== "archived" ? task.previousStatus : (task.assignee ? "run" : "todo");
+    task.previousStatus = "";
+    task.archivedAt = "";
+    task.updatedAt = new Date().toISOString();
+    saveTasks();
+    state.currentTaskId = task.id;
+    showPage("task");
+    toast("Повернуто з архіву.");
+  }
+
+  function deleteTaskForever(task) {
+    f7.dialog.confirm("Остаточно видалити задачу? Повернути її буде неможливо.", "НА-КОНТРОЛІ", function () {
+      state.tasks = state.tasks.filter(function (item) { return item.id !== task.id; });
+      state.currentTaskId = "";
+      saveTasks();
+      showPage("archive");
+      toast("Остаточно видалено.");
+    });
+  }
+
+  function clearArchive() {
+    var count = archivedTasks().length;
+    if (!count) return toast("Архів порожній.");
+    f7.dialog.confirm("Остаточно видалити всі задачі з архіву? Кількість: " + count + ".", "НА-КОНТРОЛІ", function () {
+      state.tasks = state.tasks.filter(function (task) { return task.status !== "archived"; });
+      state.currentTaskId = "";
+      saveTasks();
+      showPage("settings");
+      toast("Архів очищено.");
+    });
   }
 
   function exportData() {
@@ -1075,7 +1399,7 @@
                 state.tasks = state.tasks.concat(data.tasks.map(function (task) {
                   task.id = c.id();
                   task.syncId = task.syncId || c.id();
-                  return task;
+                  return normalizeTask(task);
                 }));
                 saveTasks();
                 showPage("tasks");
@@ -1087,7 +1411,7 @@
               bold: true,
               color: "red",
               onClick: function () {
-                state.tasks = data.tasks;
+                state.tasks = data.tasks.map(normalizeTask);
                 saveTasks();
                 showPage("tasks");
                 toast("Імпорт замінив задачі.");
@@ -1100,6 +1424,32 @@
       }
     };
     reader.readAsText(file);
+  }
+
+  function shareAppLink() {
+    closeServiceMenu();
+    var text = "НА-КОНТРОЛІ: локальний задачник";
+    if (navigator.share) {
+      navigator.share({
+        title: "НА-КОНТРОЛІ",
+        text: text,
+        url: APP_SHARE_URL
+      }).then(function () {
+        toast("Посилання передано.");
+      }).catch(function () {
+        toast("Поділитися не вдалося.");
+      });
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(APP_SHARE_URL).then(function () {
+        toast("Посилання скопійовано.");
+      }).catch(function () {
+        toast(APP_SHARE_URL);
+      });
+      return;
+    }
+    toast(APP_SHARE_URL);
   }
 
   function isStandalone() {
@@ -1115,7 +1465,7 @@
   }
 
   function updateInstallButton() {
-    var button = $("#installBtn");
+    var button = $("#installBtn") || document.querySelector("[data-settings-action='installApp']");
     if (!button) return;
     if (isStandalone()) button.textContent = "Встановлено";
     else if (isAndroid()) button.textContent = "На екран";
@@ -1312,6 +1662,50 @@
     $("#taskPage").addEventListener("click", handleTaskAction);
     $("#taskPage").addEventListener("change", handleTaskAction);
     $("#donePage").addEventListener("click", handleTaskAction);
+    $("#settingsPage").addEventListener("change", function (event) {
+      var input = event.target.closest("[data-setting]");
+      if (!input) return;
+      state.settings[input.dataset.setting] = input.checked;
+      saveSettings();
+      clearOldReminderMarks();
+      checkReminders();
+      renderSettingsPage();
+    });
+    $("#settingsPage").addEventListener("click", function (event) {
+      var button = event.target.closest("[data-settings-action]");
+      if (!button) return;
+      var action = button.dataset.settingsAction;
+      if (action === "backTasks") return showPage("tasks");
+      if (action === "enableNotifications") return enableNotifications();
+      if (action === "exportData") return exportData();
+      if (action === "importData") return $("#importFile").click();
+      if (action === "openArchive") return showPage("archive");
+      if (action === "clearArchive") return clearArchive();
+      if (action === "shareApp") return shareAppLink();
+      if (action === "installApp") return install();
+      if (action === "openUpdates") return showPage("updates");
+    });
+    $("#archivePage").addEventListener("click", handleTaskAction);
+    $("#archivePage").addEventListener("click", function (event) {
+      var button = event.target.closest("[data-archive-action]");
+      var card = event.target.closest("[data-task]");
+      var task = card ? state.tasks.find(function (item) { return item.id === card.dataset.task; }) : null;
+      if (!button) return;
+      if (button.dataset.archiveAction === "backSettings") return showPage("settings");
+      if (!task) return;
+      if (button.dataset.archiveAction === "restore") return restoreTask(task);
+      if (button.dataset.archiveAction === "deleteForever") return deleteTaskForever(task);
+    });
+    $("#guidePage").addEventListener("click", function (event) {
+      var button = event.target.closest("[data-action='openUpdates']");
+      if (!button) return;
+      showPage("updates");
+    });
+    $("#updatesPage").addEventListener("click", function (event) {
+      var button = event.target.closest("[data-action='backGuide']");
+      if (!button) return;
+      showPage("guide");
+    });
     $("#tasksPage").addEventListener("input", function (event) {
       if (event.target.id === "searchInput") {
         state.query = event.target.value;
@@ -1323,6 +1717,12 @@
       if (!button) return;
       state.tagFilter = button.dataset.tagFilter || "all";
       renderTasksPage();
+    });
+    $("#tasksPage").addEventListener("click", function (event) {
+      var button = event.target.closest("[data-action='quickFilter']");
+      if (!button) return;
+      state.filter = button.dataset.filter || "all";
+      showPage("tasks");
     });
 
     $("#moreBtn").addEventListener("click", function (event) {
@@ -1358,10 +1758,8 @@
     });
 
     $("#doneMenuBtn").addEventListener("click", function () { closeServiceMenu(); showPage("done"); });
-    $("#notifyBtn").addEventListener("click", enableNotifications);
+    $("#settingsMenuBtn").addEventListener("click", function () { closeServiceMenu(); showPage("settings"); });
     if ($("#installBtn")) $("#installBtn").addEventListener("click", function () { closeServiceMenu(); install(); });
-    $("#exportBtn").addEventListener("click", function () { closeServiceMenu(); exportData(); });
-    $("#importBtn").addEventListener("click", function () { closeServiceMenu(); $("#importFile").click(); });
     $("#importFile").addEventListener("change", function (event) {
       if (event.target.files[0]) importData(event.target.files[0]);
       event.target.value = "";
