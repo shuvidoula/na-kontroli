@@ -915,7 +915,7 @@
       '</ul></div>' +
       '<div class="info-box"><h2>Про автора та додаток</h2>' +
         '<p><strong>НА-КОНТРОЛІ</strong> створено як простий особистий задачник для швидкої фіксації задач, етапів і доручень.</p>' +
-        '<div class="version-row"><p>Версія: <strong>1.1.1</strong>.</p><button class="button button-outline" type="button" data-action="openUpdates">Що нового</button></div>' +
+        '<div class="version-row"><p>Версія: <strong>1.1.2</strong>.</p><button class="button button-outline" type="button" data-action="openUpdates">Що нового</button></div>' +
         '<p>Автор і власник ідеї: <strong>ShuviDoula</strong>.</p>' +
         '<ul><li>GitHub: github.com/ShuviDoula</li><li>Сайт: ' + APP_SHARE_URL + '</li></ul>' +
       '</div>';
@@ -929,6 +929,15 @@
 
   function renderUpdatesPage() {
     var updates = [
+      {
+        version: "1.1.2",
+        title: "Примітка у швидкій задачі",
+        items: [
+          "У швидку задачу додано окреме поле Примітка.",
+          "Туди можна вставити повний текст повідомлення з месенджера.",
+          "Примітка з першого рядка і великий текст обʼєднуються в одній задачі."
+        ]
+      },
       {
         version: "1.1.1",
         title: "Полірування навігації і бекапу",
@@ -1169,6 +1178,7 @@
     state.quickTag = "";
     $("#quickTaskDate").value = c.today();
     $("#quickTaskLine").value = "";
+    $("#quickTaskNote").value = "";
     renderQuickTags();
     openQuickTaskModal();
     if (window.matchMedia("(pointer: fine)").matches) {
@@ -1184,6 +1194,8 @@
   function saveQuickTaskForm(event) {
     event.preventDefault();
     var parsed = parseQuickLine($("#quickTaskLine").value);
+    var extraNote = c.clean($("#quickTaskNote").value);
+    var note = [parsed.note, extraNote].filter(Boolean).join("\n\n");
     if (parsed.error) return toast(parsed.error);
     if (!parsed.title) return toast("Напишіть, що зробити.");
     var task = {
@@ -1197,7 +1209,7 @@
       tag: state.quickTag || "",
       assignee: "",
       status: "todo",
-      note: parsed.note,
+      note: note,
       items: [],
       doneAt: ""
     };
