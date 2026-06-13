@@ -44,6 +44,7 @@
 
           <div class="login-actions">
             <small>Дані відкриваються тільки після PIN на цьому пристрої.</small>
+            <button id="loginInfoBtn" class="button button-outline" type="button">Що це і як встановити</button>
             <button id="continueStorageBtn" class="button button-fill" type="button">Далі</button>
             <button id="resetCreatePinBtn" class="button button-outline" type="button">Створити PIN заново</button>
             <button id="cancelCreateStorageBtn" class="button button-outline danger-link" type="button">Видалити це сховище</button>
@@ -51,6 +52,53 @@
             <button id="backToStoragesBtn" class="button button-outline" type="button">До списку сховищ</button>
             <button id="logoutLoginBtn" class="button button-outline" type="button">Вийти / змінити сховище</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="loginInfoPopup" class="task-modal" role="dialog" aria-modal="true" aria-labelledby="loginInfoTitle">
+      <div class="task-sheet info-sheet">
+        <div class="task-sheet-head">
+          <h2 id="loginInfoTitle">Про додаток</h2>
+          <button id="closeLoginInfoPopup" class="icon-button" type="button" aria-label="Закрити">x</button>
+        </div>
+        <div class="popup-content">
+          <div class="start-info">
+            <section>
+              <h3>НА-КОНТРОЛІ</h3>
+              <p>Локальний задачник для швидкого запису задач, нагадувань, етапів і доручень. Дані зберігаються на цьому пристрої та відкриваються через PIN.</p>
+            </section>
+            <section>
+              <h3>Як встановити на iPhone</h3>
+              <ol>
+                <li>Відкрийте додаток у Safari.</li>
+                <li>Натисніть кнопку Поділитися внизу екрана.</li>
+                <li>Оберіть На екран Домівки.</li>
+                <li>Натисніть Додати.</li>
+                <li>Після встановлення один раз відкрийте додаток з інтернетом, щоб підготувати офлайн-кеш.</li>
+              </ol>
+            </section>
+            <section>
+              <h3>Як встановити на Android</h3>
+              <ol>
+                <li>Відкрийте додаток у Chrome.</li>
+                <li>Натисніть меню з трьома крапками.</li>
+                <li>Оберіть Встановити додаток або Додати на головний екран.</li>
+                <li>Підтвердьте встановлення.</li>
+              </ol>
+            </section>
+            <section>
+              <h3>Важливо</h3>
+              <ul>
+                <li>Перед зміною телефона зробіть бекап у налаштуваннях.</li>
+                <li>Якщо немає інтернету, додаток відкриває останню закешовану версію.</li>
+                <li>Оновлення підтягуються після відкриття додатку з інтернетом.</li>
+              </ul>
+            </section>
+          </div>
+        </div>
+        <div class="form-actions task-sheet-actions">
+          <button id="loginInfoDoneBtn" class="button button-fill" type="button">Зрозуміло</button>
         </div>
       </div>
     </div>
@@ -67,6 +115,7 @@
         <button id="moreBtn" class="icon-button" type="button" aria-label="Меню">⋮</button>
         <div id="serviceMenu" class="service-menu" hidden>
           <button id="doneMenuBtn" type="button">Виконані</button>
+          <button id="permanentMenuBtn" type="button">Постійні нагадування</button>
           <button id="settingsMenuBtn" type="button">Налаштування</button>
           <button id="logoutBtn" type="button">Вихід</button>
         </div>
@@ -80,6 +129,7 @@
         <section id="updatesPage" class="app-page" hidden></section>
         <section id="settingsPage" class="app-page" hidden></section>
         <section id="archivePage" class="app-page" hidden></section>
+        <section id="permanentPage" class="app-page" hidden></section>
       </main>
 
       <nav class="app-tabbar" aria-label="Основне меню">
@@ -157,6 +207,48 @@
         <div class="choice-actions">
           <button id="quickCreateBtn" class="button button-fill" type="button">ШВИДКА</button>
           <button id="fullCreateBtn" class="button button-outline" type="button">ПОВНА</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="permanentPopup" class="task-modal" role="dialog" aria-modal="true" aria-labelledby="permanentPopupTitle">
+      <div class="task-sheet">
+        <div class="task-sheet-head">
+          <h2 id="permanentPopupTitle">Постійне нагадування</h2>
+          <button id="closePermanentPopup" class="icon-button" type="button" aria-label="Закрити">x</button>
+        </div>
+        <div class="popup-content">
+          <form id="permanentForm" class="task-form" autocomplete="off">
+            <input id="permanentId" type="hidden">
+            <label class="field-label">Назва
+              <input id="permanentTitle" type="text" required maxlength="120" autocomplete="off" placeholder="YouTube Premium">
+            </label>
+            <div class="form-grid">
+              <label class="field-label">Дата
+                <input id="permanentDate" type="date" required autocomplete="off">
+              </label>
+              <label class="field-label">Час
+                <input id="permanentTime" type="time" required autocomplete="off">
+              </label>
+            </div>
+            <label class="field-label">Повтор
+              <select id="permanentRepeat">
+                <option value="monthly">Щомісяця</option>
+                <option value="once">Один раз</option>
+              </select>
+            </label>
+            <label class="field-label">Примітка
+              <textarea id="permanentNote" maxlength="1200" autocomplete="off" placeholder="Зніме 250 грн на YouTube Premium"></textarea>
+            </label>
+          </form>
+        </div>
+        <div class="form-actions task-sheet-actions">
+          <button class="button button-fill" type="submit" form="permanentForm">Зберегти</button>
+          <div id="permanentEditorActions" class="permanent-editor-actions">
+            <button id="togglePermanentBtn" class="button button-outline" type="button">Вимкнути</button>
+            <button id="deletePermanentBtn" class="button button-outline danger-link" type="button">Видалити</button>
+          </div>
+          <button id="cancelPermanent" class="button button-outline" type="button">Скасувати</button>
         </div>
       </div>
     </div>

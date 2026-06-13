@@ -104,18 +104,24 @@
     if (!raw) return Promise.resolve({ ok: true, tasks: [] });
     return c.openStrong(raw, key).then(function (opened) {
       var parsed = JSON.parse(opened);
-      return { ok: true, tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [], upgraded: String(raw).indexOf("NK2:") !== 0 };
+      return {
+        ok: true,
+        tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+        permanentReminders: Array.isArray(parsed.permanentReminders) ? parsed.permanentReminders : [],
+        upgraded: String(raw).indexOf("NK2:") !== 0
+      };
     }).catch(function () {
-      return { ok: false, tasks: [] };
+      return { ok: false, tasks: [], permanentReminders: [] };
     });
   }
 
-  function saveTasks(user, key, tasks) {
+  function saveTasks(user, key, tasks, permanentReminders) {
     if (!user) return Promise.resolve(false);
     return c.sealStrong(JSON.stringify({
-      version: 5,
+      version: 6,
       userId: user.id,
       tasks: tasks,
+      permanentReminders: Array.isArray(permanentReminders) ? permanentReminders : [],
       savedAt: new Date().toISOString()
     }), key).then(function (sealed) {
       localStorage.setItem(dataStoreKey(user), sealed);

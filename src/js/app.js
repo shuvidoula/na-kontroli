@@ -24,12 +24,14 @@
     pendingPin: "",
     pinMismatch: false,
     tasks: [],
+    permanentReminders: [],
     page: "tasks",
     filter: "all",
     tagFilter: "all",
     quickTag: "",
     query: "",
     currentTaskId: "",
+    currentPermanentId: "",
     formStages: [],
     dragStageId: "",
     notified: {},
@@ -91,6 +93,14 @@
 
   function closeCreateChoiceModal() {
     $("#createChoicePopup").classList.remove("active");
+  }
+
+  function openLoginInfoModal() {
+    $("#loginInfoPopup").classList.add("active");
+  }
+
+  function closeLoginInfoModal() {
+    $("#loginInfoPopup").classList.remove("active");
   }
 
   function openExchangeModal(mode, text) {
@@ -199,6 +209,64 @@
     return Number.isNaN(date.getTime()) ? null : date;
   }
 
+  function daysInMonth(year, monthIndex) {
+    return new Date(year, monthIndex + 1, 0).getDate();
+  }
+
+  function reminderBaseDate(reminder) {
+    if (!reminder.date || !reminder.time) return null;
+    var date = new Date(reminder.date + "T" + reminder.time);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function monthlyReminderDate(reminder, now, grace) {
+    var base = reminderBaseDate(reminder);
+    if (!base) return null;
+    var current = new Date(now);
+    var day = Math.min(base.getDate(), daysInMonth(current.getFullYear(), current.getMonth()));
+    var due = new Date(current.getFullYear(), current.getMonth(), day, base.getHours(), base.getMinutes(), 0, 0);
+    if (due.getTime() + grace < current.getTime()) {
+      var next = new Date(current.getFullYear(), current.getMonth() + 1, 1, base.getHours(), base.getMinutes(), 0, 0);
+      next.setDate(Math.min(base.getDate(), daysInMonth(next.getFullYear(), next.getMonth())));
+      due = next;
+    }
+    return due;
+  }
+
+  function monthlyReminderLastDate(reminder, now) {
+    var base = reminderBaseDate(reminder);
+    if (!base) return null;
+    var current = new Date(now);
+    var day = Math.min(base.getDate(), daysInMonth(current.getFullYear(), current.getMonth()));
+    var due = new Date(current.getFullYear(), current.getMonth(), day, base.getHours(), base.getMinutes(), 0, 0);
+    if (due.getTime() > current.getTime()) {
+      due = new Date(current.getFullYear(), current.getMonth() - 1, 1, base.getHours(), base.getMinutes(), 0, 0);
+      due.setDate(Math.min(base.getDate(), daysInMonth(due.getFullYear(), due.getMonth())));
+    }
+    return due.getTime() >= base.getTime() ? due : null;
+  }
+
+  function permanentDueDate(reminder, now, grace) {
+    if (reminder.repeat === "once") return reminderBaseDate(reminder);
+    return monthlyReminderDate(reminder, now || Date.now(), grace || 0);
+  }
+
+  function safeDate(value) {
+    var date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function permanentLastDueDate(reminder, now) {
+    var base = reminderBaseDate(reminder);
+    if (!base) return null;
+    if (reminder.repeat === "once") return base.getTime() <= now ? base : null;
+    return monthlyReminderLastDate(reminder, now);
+  }
+
+  function dueKey(due) {
+    return due ? due.toISOString().slice(0, 16) : "";
+  }
+
   function isOverdue(task) {
     var due = taskDueDate(task);
     return !!due && task.status !== "done" && due.getTime() < Date.now();
@@ -208,12 +276,25 @@
     return [task.id, task.updatedAt || task.createdAt || "", task.date || "", task.time || "", kind].join("|");
   }
 
+  function permanentReminderId(reminder, due) {
+    return ["permanent", reminder.id, reminder.updatedAt || reminder.createdAt || "", dueKey(due), "time"].join("|");
+  }
+
   function clearOldReminderMarks() {
     var live = {};
     state.tasks.forEach(function (task) {
       if (task.status === "done" || !taskDueDate(task)) return;
       live[reminderId(task, "hour")] = true;
       live[reminderId(task, "time")] = true;
+    });
+    state.permanentReminders.forEach(function (reminder) {
+      if (reminder.active === false) return;
+      if (reminder.pendingAck && reminder.pendingDueAt) {
+        live[permanentReminderId(reminder, safeDate(reminder.pendingDueAt))] = true;
+        return;
+      }
+      var due = permanentDueDate(reminder, Date.now(), 15 * 60 * 1000);
+      if (due) live[permanentReminderId(reminder, due)] = true;
     });
     Object.keys(state.notified).forEach(function (key) {
       if (!live[key]) delete state.notified[key];
@@ -245,8 +326,32 @@
     toast(prefix + ": " + task.title);
   }
 
+  function sendPermanentNotification(reminder) {
+    var title = "Нагадування: " + reminder.title;
+    var body = (reminder.time ? reminder.time + " · " : "") + (reminder.note || "Перевірте підписку або оплату.");
+    if (notificationSupported() && Notification.permission === "granted") {
+      navigator.serviceWorker.ready.then(function (registration) {
+        if (registration.showNotification) {
+          registration.showNotification(title, {
+            body: body,
+            tag: "nk-permanent-" + reminder.id,
+            renotify: true,
+            icon: "icon-192.png",
+            badge: "icon-192.png",
+            data: { permanentId: reminder.id }
+          });
+        } else {
+          new Notification(title, { body: body, tag: "nk-permanent-" + reminder.id });
+        }
+      }).catch(function () {
+        new Notification(title, { body: body, tag: "nk-permanent-" + reminder.id });
+      });
+    }
+    toast(title);
+  }
+
   function checkReminders() {
-    if (!state.userId || !state.tasks.length) return;
+    if (!state.userId || (!state.tasks.length && !state.permanentReminders.length)) return;
     var now = Date.now();
     var grace = 15 * 60 * 1000;
     var changed = false;
@@ -268,7 +373,28 @@
         }
       });
     });
-    if (changed) saveNotified();
+    state.permanentReminders.forEach(function (reminder) {
+      if (reminder.active === false) return;
+      if (reminder.pendingAck) return;
+      var due = permanentLastDueDate(reminder, now);
+      if (!due) return;
+      var currentDueKey = dueKey(due);
+      if (reminder.lastAckDueKey === currentDueKey) return;
+      var id = permanentReminderId(reminder, due);
+      reminder.pendingAck = true;
+      reminder.pendingDueKey = currentDueKey;
+      reminder.pendingDueAt = due.toISOString();
+      reminder.pendingCreatedAt = new Date().toISOString();
+      if (state.settings.notifyAtTime !== false && !state.notified[id]) sendPermanentNotification(reminder);
+      state.notified[id] = new Date().toISOString();
+      changed = true;
+    });
+    if (changed) {
+      saveNotified();
+      saveTasks(true);
+      renderNav();
+      if (state.page === "permanent") renderPermanentPage();
+    }
   }
 
   function startReminderLoop() {
@@ -396,11 +522,14 @@
     state.pendingStorageName = "";
     state.pinMismatch = false;
     state.tasks = [];
+    state.permanentReminders = [];
     state.key = "";
     state.storageName = "";
     state.currentTaskId = "";
+    state.currentPermanentId = "";
     state.notified = {};
     state.settings = {};
+    updateAppBadge(0);
     clearInterval(state.reminderTimer);
     if (!state.users.length) {
       state.userId = "";
@@ -574,7 +703,8 @@
         state.key = store.dataKey(user, state.pin);
         state.storageName = user.callsign;
         state.tasks = [];
-        store.saveTasks(user, state.key, state.tasks).catch(function () {
+        state.permanentReminders = [];
+        store.saveTasks(user, state.key, state.tasks, state.permanentReminders).catch(function () {
           toast("Сховище створено, але дані не збережено.");
         });
         loadSettings();
@@ -617,6 +747,7 @@
         return;
       }
       state.tasks = loaded.tasks.map(normalizeTask);
+      state.permanentReminders = (loaded.permanentReminders || []).map(normalizePermanentReminder);
       loadNotified();
       loadSettings();
       if (user.keyVersion >= 2 && String(user.pinHash2 || "").indexOf("NKPH1:") !== 0) {
@@ -645,12 +776,12 @@
     showApp();
   }
 
-  function saveTasks() {
-    store.saveTasks(selectedUser(), state.key, state.tasks).catch(function () {
+  function saveTasks(skipReminderCheck) {
+    store.saveTasks(selectedUser(), state.key, state.tasks, state.permanentReminders).catch(function () {
       toast("Не вдалося зберегти дані.");
     });
     clearOldReminderMarks();
-    checkReminders();
+    if (!skipReminderCheck) checkReminders();
   }
 
   function normalizeTask(task) {
@@ -661,6 +792,25 @@
     task.createdAt = task.createdAt || new Date().toISOString();
     task.updatedAt = task.updatedAt || task.createdAt;
     return task;
+  }
+
+  function normalizePermanentReminder(reminder) {
+    reminder.id = reminder.id || c.id();
+    reminder.title = c.clean(reminder.title || "Нагадування");
+    reminder.date = reminder.date || c.today();
+    reminder.time = reminder.time || "09:00";
+    reminder.repeat = reminder.repeat === "once" ? "once" : "monthly";
+    reminder.note = c.clean(reminder.note || "");
+    reminder.active = reminder.active !== false;
+    reminder.pendingAck = !!reminder.pendingAck;
+    reminder.pendingDueKey = reminder.pendingDueKey || "";
+    reminder.pendingDueAt = reminder.pendingDueAt || "";
+    reminder.pendingCreatedAt = reminder.pendingCreatedAt || "";
+    reminder.lastAckAt = reminder.lastAckAt || "";
+    reminder.lastAckDueKey = reminder.lastAckDueKey || "";
+    reminder.createdAt = reminder.createdAt || new Date().toISOString();
+    reminder.updatedAt = reminder.updatedAt || reminder.createdAt;
+    return reminder;
   }
 
   function ensureTaskSyncId(task) {
@@ -759,6 +909,62 @@
     var list = filtered(true);
     $("#donePage").innerHTML = '<div class="detail-top"><h2>Виконані</h2></div>' +
       '<div class="task-list">' + (list.length ? list.map(taskCard).join("") : '<div class="empty-state">Виконаних задач немає.</div>') + '</div>';
+  }
+
+  function permanentRepeatLabel(reminder) {
+    return reminder.repeat === "once" ? "Один раз" : "Щомісяця";
+  }
+
+  function pendingPermanentCount() {
+    return state.permanentReminders.filter(function (reminder) {
+      return reminder.active !== false && reminder.pendingAck;
+    }).length;
+  }
+
+  function updateAppBadge(count) {
+    if (navigator.setAppBadge && navigator.clearAppBadge) {
+      (count ? navigator.setAppBadge(count) : navigator.clearAppBadge()).catch(function () {});
+    }
+  }
+
+  function permanentCard(reminder) {
+    var pending = reminder.active !== false && reminder.pendingAck;
+    var thanked = !pending && !!reminder.lastAckAt;
+    var due = pending && reminder.pendingDueAt ? safeDate(reminder.pendingDueAt) : permanentDueDate(reminder, Date.now(), 0);
+    return '<article class="task-card permanent-card ' + (pending ? "permanent-pending" : "") + '" data-permanent="' + reminder.id + '">' +
+      '<div class="task-main">' +
+        '<div><div class="task-title">' + c.escapeHtml(reminder.title) + '</div>' +
+        '<div class="meta"><span class="pill">' + c.escapeHtml(permanentRepeatLabel(reminder)) + '</span>' +
+        '<span class="pill">' + c.escapeHtml(due ? formatDate(due.toISOString().slice(0, 10)) : formatDate(reminder.date)) + (reminder.time ? " " + c.escapeHtml(reminder.time) : "") + '</span>' +
+        (pending ? '<span class="pill danger-pill">Очікує</span>' : '') +
+        (reminder.active === false ? '<span class="pill danger-pill">Вимкнено</span>' : '') + '</div></div>' +
+        '<button class="button button-outline open-task" type="button" data-permanent-action="edit">></button>' +
+      '</div>' +
+      (reminder.note ? '<small>' + c.escapeHtml(reminder.note) + '</small>' : '<small>Без примітки.</small>') +
+      '<div class="archive-actions">' +
+        (pending ? '<button class="button button-fill" type="button" data-permanent-action="ack">Дякую!</button>' : '') +
+        (thanked ? '<button class="button button-outline permanent-heart" type="button" disabled>&lt;3</button>' : '') +
+      '</div>' +
+    '</article>';
+  }
+
+  function renderPermanentPage() {
+    var pendingCount = pendingPermanentCount();
+    var list = state.permanentReminders.slice().sort(function (a, b) {
+      if ((a.pendingAck ? 1 : 0) !== (b.pendingAck ? 1 : 0)) return a.pendingAck ? -1 : 1;
+      if ((a.active === false ? 1 : 0) !== (b.active === false ? 1 : 0)) return a.active === false ? 1 : -1;
+      var ad = permanentDueDate(a, Date.now(), 0);
+      var bd = permanentDueDate(b, Date.now(), 0);
+      return String(ad ? ad.toISOString() : "").localeCompare(String(bd ? bd.toISOString() : ""));
+    });
+    $("#permanentPage").innerHTML =
+      '<div class="permanent-page-inner">' +
+        '<div class="detail-top"><h2>Постійні нагадування</h2></div>' +
+        (pendingCount ? '<article class="detail-card permanent-alert"><h3>Є нагадування: ' + pendingCount + '</h3><p>Натисніть "Дякую!" на картці, коли побачили нагадування. Після цього щомісячне нагадування перейде на наступний цикл.</p></article>' : '') +
+        '<article class="detail-card settings-card"><p>Тут можна тримати нагадування про підписки, списання і регулярні платежі, щоб не забути поповнити карту або скасувати сервіс.</p></article>' +
+        '<div class="task-list">' + (list.length ? list.map(permanentCard).join("") : '<div class="empty-state">Постійних нагадувань ще немає.</div>') + '</div>' +
+      '</div>' +
+      '<div class="permanent-add-bar"><button class="button button-fill permanent-add-bottom" type="button" data-permanent-action="new">Додати</button></div>';
   }
 
   function syncStageTextarea() {
@@ -886,6 +1092,17 @@
         '<li>Якщо час задачі минув, а задача не виконана, вона підсвічується як прострочена.</li>' +
         '<li>Сховище видаляється тільки на екрані вибору сховищ, кнопкою поруч із конкретною назвою. Для видалення треба написати "ТАК ВИДАЛИТИ".</li>' +
       '</ol></div>' +
+      '<div class="info-box"><h2>Постійні нагадування</h2><ol>' +
+        '<li>Розділ "Постійні нагадування" знаходиться у меню з трьома крапками зверху.</li>' +
+        '<li>Там можна окремо створювати нагадування про підписки, регулярні платежі та списання сервісів.</li>' +
+        '<li>Наприклад: назва "YouTube Premium", дата і час списання, а в примітці "зніме 250 грн на YouTube Premium".</li>' +
+        '<li>Це корисно, коли грошей на карті мало і не хочеться, щоб сервіс прямо перед зарплатою несподівано зняв залишок.</li>' +
+        '<li>Також це допомагає памʼятати, на які сервіси ви підписані, скільки вони коштують і коли про них треба згадати.</li>' +
+        '<li>Нагадування можна зробити щомісячним або одноразовим, вимкнути, увімкнути, змінити чи видалити.</li>' +
+        '<li>Коли час нагадування настав, у меню з трьома крапками зʼявляється лічильник, а картка нагадування підсвічується в розділі.</li>' +
+        '<li>Якщо браузер підтримує бейджі PWA, кількість таких нагадувань може показуватися і на іконці додатку.</li>' +
+        '<li>Кнопка "Дякую!" прибирає це нагадування з лічильника. Для щомісячного нагадування після цього починається наступний цикл.</li>' +
+      '</ol></div>' +
       '<div class="info-box"><h2>Передача задач</h2><ol>' +
         '<li>Передача в цій локальній версії лише фіксує, кому ви передали задачу.</li>' +
         '<li>Відкрийте задачу і натисніть "Передати".</li>' +
@@ -907,7 +1124,7 @@
         '<li>PIN для кожного сховища.</li>' +
         '<li>Дані задач зберігаються локально в браузері пристрою.</li>' +
         '<li>Швидке розділення задач: "Мої" для особистого виконання, "Іншим" для контролю доручених.</li>' +
-        '<li>Локальні нагадування допомагають не пропустити задачу з указаним часом.</li>' +
+        '<li>Локальні нагадування допомагають не пропустити задачу або регулярне списання з указаним часом.</li>' +
         '<li>Бекап та імпорт дозволяють перенести або зберегти робочий список.</li>' +
         '<li>На телефоні бекап може відкривати системне меню поширення. Якщо файл не зʼявився у завантаженнях, копія JSON також кладеться в буфер обміну.</li>' +
         '<li>Імпорт має два режими: "Додати" залишає старі задачі і додає нові, "Замінити" видаляє старі задачі та ставить задачі з файлу.</li>' +
@@ -916,7 +1133,7 @@
       '</ul></div>' +
       '<div class="info-box"><h2>Про автора та додаток</h2>' +
         '<p><strong>НА-КОНТРОЛІ</strong> створено як простий особистий задачник для швидкої фіксації задач, етапів і доручень.</p>' +
-        '<div class="version-row"><p>Версія: <strong>1.1.4</strong>.</p><button class="button button-outline" type="button" data-action="openUpdates">Що нового</button></div>' +
+        '<div class="version-row"><p>Версія: <strong>1.1.13</strong>.</p><button class="button button-outline" type="button" data-action="openUpdates">Що нового</button></div>' +
         '<p>Автор і власник ідеї: <strong>ShuviDoula</strong>.</p>' +
         '<ul><li>GitHub: github.com/ShuviDoula</li><li>Сайт: ' + APP_SHARE_URL + '</li></ul>' +
       '</div>';
@@ -930,6 +1147,87 @@
 
   function renderUpdatesPage() {
     var updates = [
+      {
+        version: "1.1.13",
+        title: "Зручніший список нагадувань",
+        items: [
+          "Кнопку Додати у постійних нагадуваннях закріплено внизу екрана.",
+          "Постійні нагадування тепер сортуються: очікувані зверху, потім найближчі активні, вимкнені нижче."
+        ]
+      },
+      {
+        version: "1.1.12",
+        title: "Полірування нагадувань",
+        items: [
+          "Кнопку Додати у постійних нагадуваннях перенесено вниз сторінки.",
+          "У редакторі кнопки Вимкнути та Видалити розміщено поруч."
+        ]
+      },
+      {
+        version: "1.1.11",
+        title: "Виправлення циклу Дякую",
+        items: [
+          "Після натискання Дякую! постійне нагадування більше не повертається одразу в очікування.",
+          "Зміна дати, часу або повтору скидає попередній закритий цикл.",
+          "Поточний цикл запамʼятовується окремо, тому щомісячне нагадування чекає наступного місяця."
+        ]
+      },
+      {
+        version: "1.1.10",
+        title: "Чистіші картки нагадувань",
+        items: [
+          "Кнопки Вимкнути та Видалити перенесено з картки в редактор постійного нагадування.",
+          "Після натискання Дякую! на картці показується неактивна кнопка <3.",
+          "Кнопка Дякую! знову зʼявиться, коли прийде час наступного циклу."
+        ]
+      },
+      {
+        version: "1.1.9",
+        title: "Візуальні нагадування",
+        items: [
+          "Постійні нагадування тепер отримують стан очікування, коли настав їхній час.",
+          "На кнопці меню з трьома крапками показується кількість активних нагадувань.",
+          "Якщо браузер підтримує бейджі PWA, кількість може показуватися на іконці додатку.",
+          "У розділі Постійні нагадування картка підсвічується і має кнопку Дякую!.",
+          "Кнопка Дякую! закриває поточний цикл нагадування; щомісячне нагадування чекатиме наступного місяця."
+        ]
+      },
+      {
+        version: "1.1.8",
+        title: "Постійні нагадування",
+        items: [
+          "У меню з трьома крапками додано розділ Постійні нагадування.",
+          "Можна створювати нагадування про підписки, регулярні платежі та списання сервісів.",
+          "Нагадування підтримують щомісячний або одноразовий повтор, примітку, вимкнення і видалення.",
+          "Бекап та імпорт тепер переносять постійні нагадування разом із задачами."
+        ]
+      },
+      {
+        version: "1.1.7",
+        title: "Повернення до списку після створення",
+        items: [
+          "Після створення швидкої або повної задачі додаток відкриває список Всі.",
+          "Нова задача більше не відкривається автоматично на сторінці деталей."
+        ]
+      },
+      {
+        version: "1.1.6",
+        title: "Підказка на старті",
+        items: [
+          "На екрани вибору, входу і створення сховища додано кнопку Що це і як встановити.",
+          "Додано коротке пояснення додатку перед створенням першого сховища.",
+          "Додано інструкцію встановлення на iPhone та Android."
+        ]
+      },
+      {
+        version: "1.1.5",
+        title: "Стабільніший офлайн-запуск",
+        items: [
+          "Посилено кешування стартової сторінки для запуску без інтернету.",
+          "Додаток не показує внутрішнє попередження про офлайн-кеш, якщо пристрій уже без мережі.",
+          "Стартовий URL PWA зроблено стабільнішим для iPhone."
+        ]
+      },
       {
         version: "1.1.4",
         title: "Пояснення тегів",
@@ -1127,6 +1425,7 @@
   }
 
   function renderNav() {
+    var pendingCount = pendingPermanentCount();
     var active = {
       navMine: state.page === "tasks" && state.filter === "mine",
       navDelegated: state.page === "tasks" && state.filter === "delegated",
@@ -1136,6 +1435,9 @@
     ["navMine", "navDelegated", "navAll", "navGuide"].forEach(function (id) {
       $("#" + id).classList.toggle("tab-link-active", !!active[id]);
     });
+    $("#moreBtn").innerHTML = '⋮' + (pendingCount ? '<span class="menu-badge">' + pendingCount + '</span>' : '');
+    $("#permanentMenuBtn").textContent = "Постійні нагадування" + (pendingCount ? " (" + pendingCount + ")" : "");
+    updateAppBadge(pendingCount);
   }
 
   function render() {
@@ -1146,6 +1448,7 @@
     renderUpdatesPage();
     renderSettingsPage();
     renderArchivePage();
+    renderPermanentPage();
     renderNav();
   }
 
@@ -1158,6 +1461,7 @@
     $("#updatesPage").hidden = page !== "updates";
     $("#settingsPage").hidden = page !== "settings";
     $("#archivePage").hidden = page !== "archive";
+    $("#permanentPage").hidden = page !== "permanent";
     render();
   }
 
@@ -1209,6 +1513,28 @@
     openCreateChoiceModal();
   }
 
+  function openPermanentForm(reminder) {
+    closeServiceMenu();
+    clearToast();
+    $("#permanentId").value = reminder ? reminder.id : "";
+    $("#permanentPopupTitle").textContent = reminder ? "Правка нагадування" : "Постійне нагадування";
+    $("#permanentTitle").value = reminder ? reminder.title : "";
+    $("#permanentDate").value = reminder ? reminder.date : c.today();
+    $("#permanentTime").value = reminder ? reminder.time : "09:00";
+    $("#permanentRepeat").value = reminder ? reminder.repeat : "monthly";
+    $("#permanentNote").value = reminder ? reminder.note : "";
+    $("#permanentEditorActions").style.display = reminder ? "grid" : "none";
+    $("#togglePermanentBtn").textContent = reminder && reminder.active === false ? "Увімкнути" : "Вимкнути";
+    $("#permanentPopup").classList.add("active");
+    if (window.matchMedia("(pointer: fine)").matches) {
+      setTimeout(function () { $("#permanentTitle").focus(); }, 30);
+    }
+  }
+
+  function closePermanentForm() {
+    $("#permanentPopup").classList.remove("active");
+  }
+
   function saveQuickTaskForm(event) {
     event.preventDefault();
     var parsed = parseQuickLine($("#quickTaskLine").value);
@@ -1234,14 +1560,16 @@
     state.tasks.push(task);
     saveTasks();
     closeQuickTaskModal();
-    state.currentTaskId = task.id;
-    showPage("task");
+    state.currentTaskId = "";
+    state.filter = "all";
+    showPage("tasks");
     toast("Швидку задачу створено.");
   }
 
   function saveTaskForm(event) {
     event.preventDefault();
     var task = $("#taskId").value ? state.tasks.find(function (item) { return item.id === $("#taskId").value; }) : null;
+    var isNewTask = !task;
     if (!task) {
       task = { id: c.id(), syncId: c.id(), createdAt: new Date().toISOString() };
       state.tasks.push(task);
@@ -1263,8 +1591,116 @@
     task.updatedAt = new Date().toISOString();
     saveTasks();
     closeTaskModal();
-    render();
+    if (isNewTask) {
+      state.currentTaskId = "";
+      state.filter = "all";
+      showPage("tasks");
+    } else {
+      render();
+    }
     toast("Збережено.");
+  }
+
+  function savePermanentForm(event) {
+    event.preventDefault();
+    var title = c.clean($("#permanentTitle").value);
+    var date = $("#permanentDate").value;
+    var time = $("#permanentTime").value;
+    var repeat = $("#permanentRepeat").value === "once" ? "once" : "monthly";
+    var note = c.clean($("#permanentNote").value);
+    if (!title) return toast("Вкажіть назву нагадування.");
+    if (!date || !time) return toast("Вкажіть дату і час.");
+    var reminder = $("#permanentId").value ? state.permanentReminders.find(function (item) { return item.id === $("#permanentId").value; }) : null;
+    var scheduleChanged = reminder && (reminder.date !== date || reminder.time !== time || reminder.repeat !== repeat);
+    if (!reminder) {
+      reminder = { id: c.id(), createdAt: new Date().toISOString(), active: true };
+      state.permanentReminders.push(reminder);
+    }
+    reminder.title = title;
+    reminder.date = date;
+    reminder.time = time;
+    reminder.repeat = repeat;
+    reminder.note = note;
+    reminder.active = reminder.active !== false;
+    if (scheduleChanged) {
+      reminder.pendingAck = false;
+      reminder.pendingDueKey = "";
+      reminder.pendingDueAt = "";
+      reminder.pendingCreatedAt = "";
+      reminder.lastAckDueKey = "";
+      reminder.lastAckAt = "";
+    }
+    reminder.updatedAt = new Date().toISOString();
+    normalizePermanentReminder(reminder);
+    saveTasks(true);
+    closePermanentForm();
+    showPage("permanent");
+    checkReminders();
+    toast("Нагадування збережено.");
+  }
+
+  function handlePermanentAction(event) {
+    var button = event.target.closest("[data-permanent-action]");
+    if (!button) return;
+    var card = event.target.closest("[data-permanent]");
+    var reminder = card ? state.permanentReminders.find(function (item) { return item.id === card.dataset.permanent; }) : null;
+    var action = button.dataset.permanentAction;
+    if (action === "new") return openPermanentForm();
+    if (!reminder) return;
+    if (action === "edit") return openPermanentForm(reminder);
+    if (action === "ack") {
+      var ackDueKey = reminder.pendingDueKey || (reminder.pendingDueAt ? dueKey(safeDate(reminder.pendingDueAt)) : "");
+      reminder.pendingAck = false;
+      reminder.pendingDueKey = "";
+      reminder.pendingDueAt = "";
+      reminder.pendingCreatedAt = "";
+      if (reminder.repeat === "once") reminder.active = false;
+      reminder.lastAckAt = new Date().toISOString();
+      reminder.lastAckDueKey = ackDueKey;
+      reminder.updatedAt = new Date().toISOString();
+      saveTasks(true);
+      renderPermanentPage();
+      renderNav();
+      toast("Дякую! Нагадування закрито.");
+      return;
+    }
+    if (action === "toggle") {
+      return togglePermanentReminder(reminder);
+    }
+    if (action === "delete") {
+      return deletePermanentReminder(reminder);
+    }
+  }
+
+  function currentPermanentFromForm() {
+    return $("#permanentId").value ? state.permanentReminders.find(function (item) { return item.id === $("#permanentId").value; }) : null;
+  }
+
+  function togglePermanentReminder(reminder) {
+    if (!reminder) return;
+    reminder.active = reminder.active === false;
+    if (!reminder.active) {
+      reminder.pendingAck = false;
+      reminder.pendingDueKey = "";
+      reminder.pendingDueAt = "";
+      reminder.pendingCreatedAt = "";
+    }
+    reminder.updatedAt = new Date().toISOString();
+    saveTasks();
+    closePermanentForm();
+    showPage("permanent");
+    toast(reminder.active ? "Нагадування увімкнено." : "Нагадування вимкнено.");
+  }
+
+  function deletePermanentReminder(reminder) {
+    if (!reminder) return;
+    f7.dialog.confirm("Видалити постійне нагадування?", "НА-КОНТРОЛІ", function () {
+      state.permanentReminders = state.permanentReminders.filter(function (item) { return item.id !== reminder.id; });
+      saveTasks();
+      closePermanentForm();
+      showPage("permanent");
+      toast("Нагадування видалено.");
+    });
   }
 
   function taskFromEvent(event) {
@@ -1373,7 +1809,13 @@
   }
 
   function exportData() {
-    var payload = { app: "НА-КОНТРОЛІ", storageName: state.storageName, exportedAt: new Date().toISOString(), tasks: state.tasks };
+    var payload = {
+      app: "НА-КОНТРОЛІ",
+      storageName: state.storageName,
+      exportedAt: new Date().toISOString(),
+      tasks: state.tasks,
+      permanentReminders: state.permanentReminders
+    };
     var json = JSON.stringify(payload, null, 2);
     var filename = "na-kontroli-backup-" + c.today() + ".json";
     var blob = new Blob([json], { type: "application/json" });
@@ -1422,9 +1864,10 @@
       try {
         var data = JSON.parse(reader.result);
         if (!Array.isArray(data.tasks)) throw new Error("bad");
+        var importedReminders = Array.isArray(data.permanentReminders) ? data.permanentReminders : [];
         f7.dialog.create({
           title: "Імпорт",
-          text: "У файлі задач: " + data.tasks.length + ". Додати - старі задачі залишаться, нові додадуться. Замінити - старі задачі буде видалено, а з файлу стануть поточними.",
+          text: "У файлі задач: " + data.tasks.length + ", постійних нагадувань: " + importedReminders.length + ". Додати - старі дані залишаться, нові додадуться. Замінити - старі дані буде видалено, а з файлу стануть поточними.",
           buttons: [
             { text: "Скасувати" },
             {
@@ -1434,6 +1877,10 @@
                   task.id = c.id();
                   task.syncId = task.syncId || c.id();
                   return normalizeTask(task);
+                }));
+                state.permanentReminders = state.permanentReminders.concat(importedReminders.map(function (reminder) {
+                  reminder.id = c.id();
+                  return normalizePermanentReminder(reminder);
                 }));
                 saveTasks();
                 showPage("tasks");
@@ -1446,6 +1893,7 @@
               color: "red",
               onClick: function () {
                 state.tasks = data.tasks.map(normalizeTask);
+                state.permanentReminders = importedReminders.map(normalizePermanentReminder);
                 saveTasks();
                 showPage("tasks");
                 toast("Імпорт замінив задачі.");
@@ -1520,12 +1968,27 @@
     else toast("Відкрийте меню браузера і додайте сторінку на головний екран.");
   }
 
-  function bind() {
-    if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
-      navigator.serviceWorker.register("sw.js").catch(function () {
-        toast("Офлайн-кеш не підключився у цьому браузері.");
+  function canUseServiceWorker() {
+    return "serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1");
+  }
+
+  function registerServiceWorker() {
+    if (!canUseServiceWorker()) return;
+    if (navigator.onLine === false) return;
+    navigator.serviceWorker.register("sw.js", { scope: "./" })
+      .then(function (registration) {
+        if (navigator.onLine !== false && registration.update) {
+          registration.update().catch(function () {});
+        }
+      })
+      .catch(function () {
+        if (navigator.onLine !== false) toast("Офлайн-кеш не підключився у цьому браузері.");
       });
-    }
+  }
+
+  function bind() {
+    registerServiceWorker();
+    window.addEventListener("online", registerServiceWorker);
     window.addEventListener("beforeinstallprompt", function (event) {
       event.preventDefault();
       state.installPrompt = event;
@@ -1566,6 +2029,12 @@
       state.pinMismatch = false;
       $("#storageNameInput").value = "";
       renderLogin();
+    });
+    $("#loginInfoBtn").addEventListener("click", openLoginInfoModal);
+    $("#closeLoginInfoPopup").addEventListener("click", closeLoginInfoModal);
+    $("#loginInfoDoneBtn").addEventListener("click", closeLoginInfoModal);
+    $("#loginInfoPopup").addEventListener("click", function (event) {
+      if (event.target.id === "loginInfoPopup") closeLoginInfoModal();
     });
     $("#continueStorageBtn").addEventListener("click", continueStorageCreate);
     $("#storageNameInput").addEventListener("keydown", function (event) {
@@ -1686,6 +2155,14 @@
     $("#taskPopup").addEventListener("click", function (event) {
       if (event.target.id === "taskPopup") closeTaskModal();
     });
+    $("#permanentForm").addEventListener("submit", savePermanentForm);
+    $("#closePermanentPopup").addEventListener("click", closePermanentForm);
+    $("#cancelPermanent").addEventListener("click", closePermanentForm);
+    $("#togglePermanentBtn").addEventListener("click", function () { togglePermanentReminder(currentPermanentFromForm()); });
+    $("#deletePermanentBtn").addEventListener("click", function () { deletePermanentReminder(currentPermanentFromForm()); });
+    $("#permanentPopup").addEventListener("click", function (event) {
+      if (event.target.id === "permanentPopup") closePermanentForm();
+    });
     $("#closeExchangePopup").addEventListener("click", closeExchangeModal);
     $("#exchangePopup").addEventListener("click", function (event) {
       if (event.target.id === "exchangePopup") closeExchangeModal();
@@ -1720,6 +2197,7 @@
       if (action === "openUpdates") return showPage("updates");
     });
     $("#archivePage").addEventListener("click", handleTaskAction);
+    $("#permanentPage").addEventListener("click", handlePermanentAction);
     $("#archivePage").addEventListener("click", function (event) {
       var button = event.target.closest("[data-archive-action]");
       var card = event.target.closest("[data-task]");
@@ -1781,6 +2259,7 @@
     });
 
     $("#doneMenuBtn").addEventListener("click", function () { closeServiceMenu(); showPage("done"); });
+    $("#permanentMenuBtn").addEventListener("click", function () { closeServiceMenu(); showPage("permanent"); });
     $("#settingsMenuBtn").addEventListener("click", function () { closeServiceMenu(); showPage("settings"); });
     if ($("#installBtn")) $("#installBtn").addEventListener("click", function () { closeServiceMenu(); install(); });
     $("#importFile").addEventListener("change", function (event) {

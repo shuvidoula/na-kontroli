@@ -298,6 +298,45 @@ a {
   color: var(--bd-muted);
 }
 
+.start-info {
+  display: grid;
+  gap: 12px;
+}
+
+.start-info section {
+  display: grid;
+  gap: 7px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--bd-line);
+}
+
+.start-info section:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.start-info h3 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.15;
+}
+
+.start-info p,
+.start-info ol,
+.start-info ul {
+  margin: 0;
+}
+
+.start-info ol,
+.start-info ul {
+  padding-left: 21px;
+}
+
+.start-info li {
+  margin: 5px 0;
+  line-height: 1.32;
+}
+
 .app-header,
 .app-tabbar {
   background: rgba(244, 245, 238, .96);
@@ -336,6 +375,7 @@ a {
 }
 
 .icon-button {
+  position: relative;
   width: 44px;
   height: 44px;
   border: 1px solid var(--bd-line);
@@ -347,6 +387,24 @@ a {
   font-size: 22px;
   font-weight: 900;
   padding: 0;
+}
+
+.menu-badge {
+  position: absolute;
+  right: -4px;
+  top: -5px;
+  min-width: 21px;
+  height: 21px;
+  border: 2px solid var(--bd-bg);
+  border-radius: 999px;
+  background: #c34235;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 900;
 }
 
 .service-menu {
@@ -596,6 +654,64 @@ a {
 
 .task-card.overdue::before {
   background: #c34235;
+}
+
+.task-card.permanent-pending {
+  border-color: #c34235;
+  background: #fff4f2;
+}
+
+.task-card.permanent-pending::before,
+.permanent-alert {
+  border-color: #c34235;
+}
+
+.task-card.permanent-pending::before {
+  background: #c34235;
+}
+
+.permanent-alert {
+  background: #fff4f2;
+}
+
+.permanent-alert h3,
+.permanent-alert p {
+  margin: 0;
+}
+
+.permanent-card .archive-actions {
+  grid-template-columns: 1fr;
+}
+
+.permanent-heart[disabled] {
+  opacity: 1;
+  color: var(--bd-olive);
+  border-color: var(--bd-line);
+  background: var(--bd-soft);
+}
+
+.permanent-editor-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.permanent-page-inner {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 72px;
+}
+
+.permanent-add-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--bd-bg) 78%, rgba(244, 245, 238, 0));
+}
+
+.permanent-add-bottom {
+  width: 100%;
 }
 
 .task-main {

@@ -2,7 +2,7 @@
   "name": "НА-КОНТРОЛІ",
   "short_name": "НК",
   "description": "Локальний офлайн-задачник зі сховищем і PIN",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f4f5ee",
